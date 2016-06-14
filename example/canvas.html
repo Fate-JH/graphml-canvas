@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+	<!-- <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"> -->
+	<head>
+		<meta charset="UTF-8">
+		<title>Graphml Canvas</title>
+		<link rel="stylesheet" type="text/css" href="canvas.css">
+		<link rel="stylesheet" type="text/css" href="../src/yWorks.css">
+		<script type="text/javascript" src="ajax.js"></script>
+		<script type="text/javascript" src="../src/GraphmlNamespace.js"></script>
+		<script type="text/javascript" src="../src/GraphmlCanvas.js"></script>
+		<script type="text/javascript" src="../src/graphml-core.js"></script>
+		<script type="text/javascript" src="../src/yWorks.js"></script>
+		<script>
+			ajax();
+			var canvas;
+			function onLoadDocument() {
+				canvas = new GraphmlCanvas({canvasId:"canvas", defaultGraph:true});
+				
+				var xhr = new XMLHttpRequest();
+				xhr.addEventListener("load", displayFiles.bind(this));
+				xhr.open('GET', "graphml_files.xml", true);
+				xhr.responseType = "text/plain";
+				xhr.send();
+			}
+			
+			function displayFiles(evt) {
+				var xhr = evt.originalTarget;
+				var xml = xhr.responseXML;
+				if(!xml)
+					return;
+				
+				var field = document.getElementById("fileListing");
+				var list = document.createElement("ol");
+				field.appendChild(list);
+				
+				var entries = xml.getElementsByTagName("entry");
+				for(var i = 0, j = entries.length; i < j; i++) {
+					var entry = entries[i];
+					var fileName = entry.getElementsByTagName("name")[0].firstChild.textContent;
+					var filePath = entry.getElementsByTagName("file")[0].firstChild.textContent;
+					var author = entry.getElementsByTagName("author")[0].firstChild.textContent;
+					var date = entry.getElementsByTagName("date")[0].firstChild.textContent;
+					var origin = entry.getElementsByTagName("origin")[0].firstChild.textContent;
+					
+					var listItem = document.createElement("li");
+					var div = document.createElement("div");
+					div.setAttribute("onclick", "loadFile('"+ filePath +"');");
+					var p = document.createElement("p");
+					var text = document.createTextNode(fileName +" -- "+ author +" -- "+ date +" -- "+ filePath +" -- "+ origin);
+					p.appendChild(text);
+					div.appendChild(p);
+					listItem.appendChild(div);
+					list.appendChild(listItem);
+				}
+			}
+				
+			function loadFile(filePath) {
+				canvas.load(filePath);
+			}
+		</script>
+	</head>
+	<body onLoad="onLoadDocument()">
+		<div>
+			<p>Hello World!</p>
+		</div>
+		<div id="canvas">
+			<div id="background"></div>
+			<div id="content">
+				<div id="left-content-padding"></div>
+				<div id="top-content-padding"></div>
+			</div>	
+		</div>
+		<div style="left:391px; top:290px; width:100px; height:100px; position:absolute;">
+			<svg width="100" height="100">
+				<path d="M 0 0 L 0 100 L 100 100 L 100 0 L 0 0" stroke="red" stroke-width="2" fill="none"></path>
+				<circle cx="50" cy="50" r="1" stroke="red" fill="red"></circle>
+			</svg>
+		</div>
+		<div id="fileListing">
+		</div>
+	</body>
+</html>
