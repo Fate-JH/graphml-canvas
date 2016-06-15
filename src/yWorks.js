@@ -634,7 +634,7 @@ yWorks.getLabels = function(attributes, xml) {
 		note.hasLineColor = label.getAttribute("hasLineColor") == null;
 		note.lineColor = note.hasLineColor ? label.getAttribute("lineColor") : "none";
 		
-		note.align = label.getAttribute("alignment");
+		note.textAlign = label.getAttribute("alignment");
 		note.autoSizePolicy = label.getAttribute("autoSizePolicy") == "content";
 		note.fontFamily = label.getAttribute("fontFamily");
 		note.fontSize = +label.getAttribute("fontSize");
@@ -653,15 +653,17 @@ yWorks.getLabels = function(attributes, xml) {
  * @param {String} attributes.id - na
  * @param {List[Object]} attributes.notes - na
  * @param {DOMElement} container - na
+ * @param {String} contentClass - na
  */
-yWorks.createLabels = function(attributes, container) {
+yWorks.createLabels = function(attributes, container, contentClass) {
 	var notes = attributes.notes || [];
+	contentClass = contentClass || "yWorks note entry";
 	
 	for(var i = 0, j = notes.length; i < j; i++) {
 		var note = notes[i];
 		var notediv = document.createElement("div"), style = null;
 		notediv.id = attributes.id+"-label-"+i;
-		var content = yWorks.splitOnNewLines(notediv, note.content, "yWorks note entry");
+		var content = yWorks.splitOnNewLines(notediv, note.content, contentClass);
 		if(content.length) {
 			notediv.className = "yWorks note content";
 			style = notediv.style;
@@ -669,22 +671,23 @@ yWorks.createLabels = function(attributes, container) {
 			style.top = note.y+"px";
 			style.width = note.width+"px";
 			style.height = note.height+"px";
-			style["font-color"] = note.fontColor;
-			style["font-family"] = note.fontFamily += ", Arial, serif";
-			style["font-size"] = note.fontSize+"px";
+			style["fontColor"] = note.fontColor;
+			style["fontFamily"] = note.fontFamily += ", Arial, serif";
+			style["fontSize"] = note.fontSize+"px";
 			style["color"] = note.fontColor;
 			var fontStyle = note.fontStyle || "";
 			if(fontStyle.search("[b|B]old") != -1)
-				style["font-weight"] = " bold";
+				style.fontWeight = " bold";
 			if(fontStyle.search("[i|I]talic") != -1)
-				style["font-style"] += " italic";
-			style["text-align"] = note.textAlign;
+				style.fontStyle += " italic";
+			style.textAlign = note.textAlign;
 			if(note.hasLineColor) {
-				style["border-style"] = "solid";
-				style["border-color"] = note.lineColor;
+				style.borderStyle = "solid";
+				style.borderColor = note.lineColor;
 			}
-			style["background-color"] = note.color1;
-			style["visibility"] = note.visible ? "inherit" : "hidden";
+			if(note.hasbackgroundColor)
+				style.backgroundColor = note.color1;
+			style.visibility = note.visible ? "inherit" : "hidden";
 		}
 		container.appendChild(notediv);
 	}
@@ -1050,15 +1053,8 @@ UMLClassNode.prototype.readXML = function(xml) {
 	
 	attributes.id = xml.getAttribute("id");
 	yWorks.getBasicGeometry(attributes, xml);
-	// TODO: certain aspects of the node's data is read in supporting functions but was original read straight from the source; replace the below code where necessary
+	yWorks.getLabels(attributes, xml); // Only the first label is ever displayed
 	var g;
-	g = xml.getElementsByTagName("y:NodeLabel")[0];
-	attributes.textAlign = g.getAttribute("alignment");
-	attributes.fontFamily = g.getAttribute("fontFamily");
-	attributes.fontSize = +g.getAttribute("fontSize");
-	attributes.fontStyle = g.getAttribute("fontStyle");
-	attributes.fontColor = g.getAttribute("textColor");
-	attributes.name = g.firstChild.nodeValue;
 	g = xml.getElementsByTagName("y:UML")[0];
 	attributes.stereotype = g.getAttribute("stereotype");
 	attributes.constraint = g.getAttribute("constraint");
@@ -1075,6 +1071,7 @@ UMLClassNode.prototype.readXML = function(xml) {
 
 /**
  * Create an HTML component to represent this UML class block.
+ * The UMLClassNode object is unique among yWorks elements as it contains no SVG data.
  * @override
  */
 UMLClassNode.prototype.createElement = function(attr) {
@@ -1128,22 +1125,31 @@ UMLClassNode.prototype.createElement = function(attr) {
 		featureNode.appendChild(document.createTextNode("<<"+stereotype+">>"));
 	contentNode.appendChild(featureNode);
 	
-	// uml class name
+	// uml class name (borrows code from yWorks.createLabels)
 	featureNode = document.createElement("div");
 	featureNode.id = this.id+"-name";
 	featureNode.className = "yWorks uml name";
-	featureNode.width = cwidth;
+	var note = attr.notes[0] || {content:"Class", fontColor:"#000000", fontSize:10};
+	var content = yWorks.splitOnNewLines(featureNode, note.content, "className");
 	style = featureNode.style;
-	style.fontColor = attr.fontColor;
-	style.fontFamily = fontFamily;
-	style.fontWeight = "";
+	style.width = cwidth+"px";
+	style.height = note.height+"px";
+	style["fontColor"] = note.fontColor;
+	style["fontFamily"] = note.fontFamily += ", Arial, serif";
+	style["fontSize"] = note.fontSize+"px";
+	style["color"] = note.fontColor;
+	var fontStyle = note.fontStyle || "";
 	if(fontStyle.search("[b|B]old") != -1)
-		style.fontWeight += " bold";
+		style.fontWeight = " bold";
 	if(fontStyle.search("[i|I]talic") != -1)
 		style.fontStyle += " italic";
-	style.fontSize = attr.fontSize+"px";
-	style.textAlign = attr.textAlign;
-	featureNode.appendChild(document.createTextNode(attr.name));
+	style.textAlign = note.textAlign;
+	if(note.hasLineColor) {
+		style.borderStyle = "solid";
+		style.borderColor = note.lineColor;
+	}
+	if(note.hasbackgroundColor)
+		style.backgroundColor = note.color1;
 	contentNode.appendChild(featureNode);
 	
 	// uml constraint
@@ -1548,6 +1554,7 @@ ShapeNode.hexagonShape = function(svg, shape, attr) {
 	var height = attr.height;
 	var tenthWidth = width/10;
 	var halfHeight = height/2;
+	
 	var d = "";
 	d += "M "+tenthWidth+" 0";
 	d += " L "+(width-tenthWidth)+" 0";

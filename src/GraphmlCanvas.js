@@ -728,7 +728,6 @@ GraphmlCanvas.prototype.prepareElements = function(graph, structures, xml) {
  */
 GraphmlCanvas.prototype.arrangeSubgraphs = function(graph, structures) {
 	var graphs1 = graph.getGraphs();
-	graph.setGraphs({}); // Clear entries
 	var graphs2 = structures.graphs; // This list should be in the "same order" as the xml so we should be able to walk through in order
 	var graphs3 = {};
 	
@@ -1032,9 +1031,13 @@ GraphmlPaper.prototype.setHyperedge = function(id, hyperedge) {
  * Get all of the subgraph elements in this graph structure.
  * @returns {Object} a live mapping of all of the graphs
  */
-GraphmlPaper.prototype.getGraphs = function() {
+GraphmlPaper.prototype.getSubgraphs = function() {
 	return this.subgraphs;
 }
+/**
+ * For internal use only.
+ */
+GraphmlPaper.prototype.getGraphs = GraphmlPaper.prototype.getSubgraphs;
 
 /**
  * Set a new mapping of subgraph elements for this graph structure.
@@ -1042,20 +1045,28 @@ GraphmlPaper.prototype.getGraphs = function() {
  * @param {Object} graph - a mapping of hyperedge ids to hyperedges
  * @returns {Object} a mapping of all of the previous hyperedge ids to hyperedges
  */
-GraphmlPaper.prototype.setGraphs = function(subgraphs) {
+GraphmlPaper.prototype.setSubgraphs = function(subgraphs) {
 	var oldSubgraph = this.subgraphs;
 	this.subgraphs = subgraphs;
 	return oldSubgraph;
 }
+/**
+ * For internal use only.
+ */
+GraphmlPaper.prototype.setGraphs = GraphmlPaper.prototype.setSubgraphs;
 
 /**
  * Get a specific graph element in this graph structure.
  * @param {String} id - the reference to the graph
  * @returns {Graph} the requested graph
  */
-GraphmlPaper.prototype.getGraph = function(id) {
+GraphmlPaper.prototype.getSubgraph = function(id) {
 	return this.subgraphs[id];
 }
+/**
+ * For internal use only.
+ */
+GraphmlPaper.prototype.getGraph = GraphmlPaper.prototype.getSubgraph;
 
 /**
  * Set a specific graph into the mapping of graph elements with the given id.
@@ -1064,12 +1075,16 @@ GraphmlPaper.prototype.getGraph = function(id) {
  * @param {Graph} subgraph - the new graph
  * @returns {Graph} the previous subgraph that belonged to this id, if any
  */
-GraphmlPaper.prototype.setGraph = function(id, subgraph) {
+GraphmlPaper.prototype.setSubgraph = function(id, subgraph) {
 	var subgraphs = this.subgraphs;
 	var oldSubgraph = subgraphs[id];
 	subgraphs[id] = subgraph;
 	return oldSubgraph;
 }
+/**
+ * For internal use only.
+ */
+GraphmlPaper.prototype.setGraph = GraphmlPaper.prototype.setSubgraph;
 
 /**
  * Get all of the namespaces used in this graph structure.
