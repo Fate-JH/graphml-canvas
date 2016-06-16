@@ -66,23 +66,18 @@ GraphmlElement.prototype.setId = function(id) {
  * @returns {Object} the additional data
  */
 GraphmlElement.prototype.getAttributes = function() {
-	var rep = this.representation;
-	if(rep && typeof(rep) == "object")
-		return rep.getAttributes();
-	else
-		return this.attributes || {x:0, y:0, width:0, height:0};
+	return this.attributes;
 }
 
 /**
  * Provide new additional data after the element exists.
  * @param {Object} attributes - the additional data
- * @returns {Boolean} always returns true
+ * @returns {Object} any old additional data that we are replacing
  */
 GraphmlElement.prototype.setAttributes = function(attributes) {
-	if(!this.representation || typeof(this.representation) == "function")
-		this.attributes = attributes;
-	// TODO: the visualization is present; adjusting our attributes might change that
-	return true;
+	var attr = this.attributes;
+	this.attributes = attributes;
+	return attr;
 }
 
 /**
@@ -94,19 +89,65 @@ GraphmlElement.prototype.getRepresentation = function() {
 }
 
 /**
- * Provide the visualization of this element.
+ * Assign the visualization of this element.
  * @param {Function} shape - the constructor of the visualization of the element
  * @returns {Boolean} true, if it was set correctly; false, otherwise
  */
 GraphmlElement.prototype.setRepresentation = function(shape) {
-	if(!shape || typeof(shape) != "function")
+	var typeOfShape = typeof(shape);
+	if(!shape || typeOfShape != "function")
 		return false;
 	
-	if(!this.representation || typeof(this.representation) == "function") {
-		this.representation = shape;
-		return true;
+	var representation = this.representation
+	var typeOfRep = typeof(representation);
+	if(representation) {
+		if(typeOfRep == "object") {
+			console.log("The representation of element "+this.id+" has already been created.  Replacing it is not supported at this time.");
+			return false;
+		}
 	}
-	return false;
+	
+	this.representation = shape;
+	this.buildRepresentation();
+	return true;
+}
+
+/**
+ * Build the prescribed representation.
+ * If the representation has already been built, rebuild it.
+ * Please note that the result is not dependent on whether a representation exists afterwards, but whether the building process succeeded.
+ * @returns {Boolean} true, if the representation was capable of being built; false, otherwise
+ */
+GraphmlElement.prototype.buildRepresentation = function() {
+	var attributes = this.attributes;
+	var representation = this.representation;
+	var func = representation;
+	var workingRepresentation = representation && typeof(representation) == "object"; // typeof(null) == "object;" true story
+	
+	if(workingRepresentation) {
+		attributes = representation.getAttributes();
+		func = representation.constructor;
+	}
+	if(!attributes || !attributes.xml || !func)
+		return false;
+	
+	var object = null;
+	try {
+		object = new func(this.id, attributes);
+		this.representation = object;
+	}
+	catch(err) {
+		if(!xml)
+			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but there was no data");
+		else if(!rep)
+			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but could not build a working parser");
+		else if(!object)
+			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but could not build a "+rep.name+" visual representation");
+		if(!workingRepresentation) // We failed to construct this Representation and it had not previously been constructed; discard it
+			this.representation = null;
+		return false;
+	}
+	return true;
 }
 
 /**
@@ -171,29 +212,12 @@ GraphmlElement.prototype.setBounds = function(bounds) {
  */
 GraphmlElement.prototype.readXML = function(attributes) {
 	attributes = attributes || {};
-	var rep = this.representation;
-	var uninitialized = rep && typeof(rep) == "function";
 	var xml = attributes.xml;
 	
 	this.getGraphmlAttributes(xml, attributes);
 	this.setAttributes(attributes);
 	this.id = attributes.id;
-	var object = null;
-	if(uninitialized) {
-		try {
-			object = new rep(this.id, attributes);
-			this.representation = object;
-		}
-		catch(err) {
-			if(!xml)
-				console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but there was no data");
-			else if(!rep)
-				console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but could not build a working parser");
-			else if(!object)
-				console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but could not build a "+rep.name+" visual representation");
-			this.representation = null;
-		}
-	}
+	this.buildRepresentation();
 }
 
 /**
@@ -221,6 +245,7 @@ GraphmlElement.prototype.createElement = function(attr) {
 	
 	var container = document.createElement("div");
 	container.id = this.id;
+	container.className = this.constructor.name.toLowerCase();
 	if(rep && typeof(rep) == "object")
 		container.appendChild( rep.createElement(attr) );
 	else 
@@ -327,6 +352,7 @@ Representation.prototype.setBounds = function(bounds) {
 Representation.prototype.readXML = function(xml) {
 	var attributes = {};
 	this.id = (attributes.id = xml.getAttribute("id") || this.id);
+	this.xml = xml;
 	return attributes;
 }
 
@@ -575,24 +601,94 @@ Graph.prototype.getGraphmlAttributes = function(xml, attributes) {
 
 /**
  * The basic container of a graphml node element.
+ * Since subgraphs are contained within nodes in graphml, those components are also this class's responsibility.
+ * @property {Array[String]} subgraphs - an Array of ids that indicates every subgraph that is an immediate child of this element
  * @constructor
- * @property {String} id - an unique identifier for this element
- * @property {Object} shape - the optional, but recommended, behaviors that maintain the visual component of the element
- * @property {Object} attributes - a reference copy of the original information passed into the function (only set if there is no representation)
+ * @param {String} id - an unique identifier for this element
+ * @param {Object} shape - the optional, but recommended, behaviors that maintain the visual component of the element
+ * @param {Object} attributes - a reference copy of the original information passed into the function (only set if there is no representation)
  */
 Node.prototype = new GraphmlElement();
 Node.prototype.constructor = Node;
 function Node(id, shape, attributes) {
+	this.subgraphs = [];
 	GraphmlElement.call(this, id, shape, attributes);
+}
+
+/**
+ * Retrieve all subgraphs attached to this element.
+ * @returns {Array[String]} an Array of subgraph ids
+ */
+Node.prototype.getSubgraphs = function() {
+	return this.subgraphs;
+}
+
+/**
+ * Assign subgraphs to this element.
+ * @returns {Boolean} always returns false
+ */
+Node.prototype.setSubgraphs = function(subgraphs) {
+	// Currently, not supported
+	return false;
+}
+
+/**
+ * na
+ * @returns {Boolean} true, if this Node has subgraphs assigned to it; false, otherwise
+ */
+Node.prototype.hasSubgraphs = function() {
+	return this.subgraphs.length > 0;
+}
+
+/**
+ * Get basic valid attribute data from the node entity.
+ * @override
+ */
+Node.prototype.getGraphmlAttributes = function(xml, attributes) {
+	attributes = attributes || {};
+	if(xml) {
+		GraphmlElement.prototype.getGraphmlAttributes.call(this, xml,attributes);
+		
+		var children = xml.children; // Check for subgraphs among this node's children
+		var subs = this.subgraphs;
+		for(var i = 0, j = children.length; i < j; i++) {
+			if(children[i].tagName == "graph")
+				subs.push( children[i].id );
+		}
+	}
+	return attributes;
+}
+
+/**
+ * Create an HTML component to represent this graphml element
+ * @override
+ */
+Node.prototype.createElement = function(attr) {
+	var container = GraphmlElement.prototype.createElement.call(this, attr);
+	if(!attr)
+		attr = this.getAttributes();
+	
+	var subgraphs = this.subgraphs;
+	var j = subgraphs.length;
+	if(j > 0) {
+		for(var i = 0; i < j; i++) {
+			var graph = document.createElement("div");
+			graph.id = subgraphs[i];
+			graph.className = "graph";
+			container.appendChild(graph);
+		}
+	}
+	
+	return container;
 }
 
 
 /**
  * The basic container of a graphml edge element.
  * @constructor
- * @property {String} id - an unique identifier for this element
- * @property {Object} shape - the optional, but recommended, behaviors that maintain the visual component of the element
- * @property {Object} attributes - a reference copy of the original information passed into the function (only set if there is no representation)
+ * @param {String} id - an unique identifier for this element
+ * @param {Object} shape - the optional, but recommended, behaviors that maintain the visual component of the element
+ * @param {Object} attributes - a reference copy of the original information passed into the function (only set if there is no representation)
  */
 Edge.prototype = new GraphmlElement();
 Edge.prototype.constructor = Edge;
@@ -628,9 +724,9 @@ Edge.prototype.getGraphmlAttributes = function(xml, attributes) {
  * The basic container of a graphml hyperedge element.
  * Hyperedges are generalizations of edges in the sense that they do not only relate two endpoints to each other, but express a relation between an arbitrary number of enpoints.
  * @constructor
- * @property {String} id - an unique identifier for this element
- * @property {Object} shape - the optional, but recommended, behaviors that maintain the visual component of the element
- * @property {Object} attributes - a reference copy of the original information passed into the function (only set if there is no representation)
+ * @param {String} id - an unique identifier for this element
+ * @param {Object} shape - the optional, but recommended, behaviors that maintain the visual component of the element
+ * @param {Object} attributes - a reference copy of the original information passed into the function (only set if there is no representation)
  */
 Hyperedge.prototype = new GraphmlElement();
 Hyperedge.prototype.constructor = Hyperedge;

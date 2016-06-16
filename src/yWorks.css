@@ -76,6 +76,7 @@
 	width:100%;
 	height:100%;
 	position:absolute;
+	/*see yWorks.proxy.shape*/
 }
 
 /* GenericNode */
@@ -93,6 +94,18 @@
 .yWorks.svg { }
 
 .yWorks.svg.frame {
+	position:absolute;
+}
+
+/* ProxyAutoBoundsNode */
+.yWorks.proxy { }
+
+.yWorks.proxy.shape {
+	/*same as yWorks.shape.frame*/
+	left:0px;
+	top:0px;
+	width:100%;
+	height:100%;
 	position:absolute;
 }
 

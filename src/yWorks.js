@@ -8,6 +8,7 @@ yWorks.setSpecificClass(null, this["ShapeNode"]);
 yWorks.setSpecificClass(null, this["GenericNode"]);
 yWorks.setSpecificClass(null, this["SVGNode"]);
 yWorks.setSpecificClass(null, this["PolyLineEdge"]);
+yWorks.setSpecificClass(null, this["ProxyAutoBoundsNode"]);
 
 /**
  * The entry point for setting up the nodes from their data.
@@ -37,7 +38,10 @@ yWorks.resolveGraphSize = function(graph) {
 	var lowerx = Infinity, lowery = Infinity, upperx = -Infinity, uppery = -Infinity;
 	
 	for(var id in nodes) { // Iterate over nodes and determine if any are positioned off page to the left or top
-		var data = nodes[id].getAttributes();
+		var data = nodes[id].getRepresentation();
+		if(!data)
+			continue;
+		data = data.getAttributes();
 		var x = data.x, y = data.y, xw = x + data.width, yh = y + data.height;
 		if(x < lowerx)
 			lowerx = x;
@@ -61,7 +65,10 @@ yWorks.resolveGraphSize = function(graph) {
 		}
 	}
 	for(var id in edges) { // Iterate over edges and determine if any are positioned off page to the left or top
-		var data = edges[id].getAttributes();
+		var data = edges[id].getRepresentation();
+		if(!data)
+			continue;
+		data = data.getAttributes();
 		var px = data.px, py = data.py;
 		for(var i = 0, j = px.length; i < j; i++) {
 			if(px[i] < lowerx)
@@ -117,7 +124,10 @@ yWorks.shiftElements = function(graph, dx, dy) {
 	// Nodes
 	var nodes = graph.getNodes();
 	for(var id in nodes) {
-		var data = nodes[id].getAttributes();
+		var data = nodes[id].getRepresentation();
+		if(!data)
+			continue;
+		data = data.getAttributes();
 		data.x += dx;
 		data.y += dy;
 		var notes = data.notes || [];
@@ -129,7 +139,10 @@ yWorks.shiftElements = function(graph, dx, dy) {
 	// Edges
 	var edges = graph.getEdges();
 	for(var id in edges) {
-		var data = edges[id].getAttributes();
+		var data = edges[id].getRepresentation();
+		if(!data)
+			continue;
+		data = data.getAttributes();
 		var px = data.px, py = data.py;
 		for(var i = 0, j = px.length; i < j; i++) {
 			px[i] += dx;
@@ -165,17 +178,20 @@ yWorks.prepareElementsForInitialDraw = function(canvas, graph) {
 	
 	for(var id in edges) { // Fine tune the data that will create the edge lines
 		var edge = edges[id];
-		var data = edge.getAttributes();
+		var data = edge.getRepresentation();
+		if(!data)
+			continue;
+		data = data.getAttributes();
 		var source = data.source;
 		var target = data.target;
 		var px = data.px;
 		var py = data.py;
 		
 		// 1. Get the source and target node and their centers
-		var sNode = nodes[data.source.id].getAttributes();
+		var sNode = nodes[data.source.id].getRepresentation().getAttributes();
 		var sNodeX = source.x = sNode.x + sNode.width/2 + source.dx;
 		var sNodeY = source.y = sNode.y + sNode.height/2 + source.dy;
-		var tNode = nodes[data.target.id].getAttributes();
+		var tNode = nodes[data.target.id].getRepresentation().getAttributes();
 		var tNodeX = target.x = tNode.x + tNode.width/2 + target.dx;
 		var tNodeY = target.y = tNode.y + tNode.height/2 + target.dy;
 		
@@ -4053,6 +4069,110 @@ SVGNode.propagateUniqueID = function(svg, uid) {
 		if(child.children.length)
 			SVGNode.propagateUniqueID(child, uid);
 	}
+}
+
+/**
+ * na
+ */
+ProxyAutoBoundsNode.prototype = new Representation();
+ProxyAutoBoundsNode.prototype.constructor = ProxyAutoBoundsNode;
+function ProxyAutoBoundsNode(id, attributes) {
+	Representation.call(this, id,attributes);
+}
+
+/**
+ * na
+ */
+ProxyAutoBoundsNode.prototype.readXML = function(xml) {
+	var attributes = {};
+
+	attributes.id = this.id;
+	attributes["foldertype"] = xml.getAttribute("yfiles.foldertype");
+	
+	var g;
+	g = xml.getElementsByTagName("y:Realizers")[0];
+	attributes.active = +g.getAttribute("active");
+	
+	// GroupNodes
+	var groups = attributes.groups = [];
+	var gElems = g.getElementsByTagName("y:GroupNode");
+	for(var i = 0, j = gElems.length; i < j; i++) {
+		var group = {};
+		var gi = gElems[i];
+		yWorks.getBasicGeometry(group, gi);
+		yWorks.getLabels(group, gi);
+		
+		var section = gi.getElementsByTagName("y:Shape")[0], field = null;
+		group.shape = section.getAttribute("type");
+		
+		field = (group.state = {});
+		section = gi.getElementsByTagName("y:State")[0];
+		field.closed = section.getAttribute("closed") == "true";
+		field.closedHeight = +section.getAttribute("closedHeight");
+		field.closedWidth = +section.getAttribute("closedWidth");
+		field.innerGraphDisplayEnabled = section.getAttribute("innerGraphDisplayEnabled") == "true";
+		
+		field = (group.insets = {});
+		section = gi.getElementsByTagName("y:Insets")[0];
+		field.left = +section.getAttribute("left");
+		field.leftF = +section.getAttribute("leftF");
+		field.right = +section.getAttribute("right");
+		field.rightF = +section.getAttribute("rightF");
+		field.top = section.getAttribute("top");
+		field.topF = +section.getAttribute("topF");
+		field.bottom = section.getAttribute("bottom");
+		field.bottomF = +section.getAttribute("bottomF");
+		
+		field = (group.borderInsets = {});
+		section = gi.getElementsByTagName("y:BorderInsets")[0];
+		field.left = +section.getAttribute("left");
+		field.leftF = +section.getAttribute("leftF");
+		field.right = +section.getAttribute("right");
+		field.rightF = +section.getAttribute("rightF");
+		field.top = section.getAttribute("top");
+		field.topF = +section.getAttribute("topF");
+		field.bottom = section.getAttribute("bottom");
+		field.bottomF = +section.getAttribute("bottomF");
+		
+		groups.push(group);
+	}
+	
+	// GenericGroupNodes
+	// ...
+	
+	return attributes;
+}
+
+/**
+ * Create an HTML component to represent this edge.
+ * @override
+ */
+ProxyAutoBoundsNode.prototype.createElement = function(attr) {
+	attr = attr || this.data;
+	
+	var containerNode = Representation.prototype.createElement.call(this, attr), style = null;
+	containerNode.className = "yWorks proxy";
+	
+	var contentNode = null, style = null;
+	var groups = attr.groups;
+	var active = attr.active;
+	for(var i = 0, j = groups.length; i < j; i++) {
+		var group = groups[i];
+		contentNode = document.createElement("div"), style = null;
+		contentNode.id = this.id+"-shape-"+i;
+		contentNode.className = "yWorks proxy shape";
+		style = contentNode.style;
+		style.left = group.x+"px";
+		style.top = group.y+"px";
+		style.width = group.width+"px";
+		style.height = group.height+"px";
+		if(i != active)
+			style.visibility = "hidden";
+		contentNode.appendChild( ShapeNode.createShape(group.shape, group) ); // One part of the proxy auto-bounds is a shape like ShapeNode
+		containerNode.appendChild(contentNode);
+	}
+	
+	return containerNode;
 }
 
 

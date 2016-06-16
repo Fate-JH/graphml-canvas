@@ -360,12 +360,20 @@ GraphmlCanvas.prototype.setContentLayer = function(elem) {
 
 /**
  * Take the provided DOMElement and add it to the content layer as a child.
- * @param {DOMElement} elem - the element new content is drawn from
+ * @param {DOMElement} elem - the new content
+ * @param {DOMElement} subElem - a nested DOMElement in the content layer into which the elem is appended
  */
-GraphmlCanvas.prototype.setToContentLayer = function(elem) {
-	var content = this.getContentLayer();
-	if(content && elem) {
-		content.appendChild(elem);
+GraphmlCanvas.prototype.setToContentLayer = function(elem, subElem) {
+	if(elem) {
+		var content = this.getContentLayer();
+		var subContent = document.getElementById(subElem);
+		if(subContent)
+			// TODO: test that subContent exists within content; if not, do not append elem into it
+			subContent.appendChild(elem);
+		else if(content)
+			content.appendChild(elem);
+		else
+			console.log("Could not add "+elem.id+" anywhere.");
 	}
 }
 
@@ -1226,24 +1234,25 @@ GraphmlPaper.prototype.draw = function(canvas) {
 }
 
 /**
- * Draw all nodes on this paper in order of the subgraph organization
+ * Draw all nodes on this paper in order of the subgraph organization.
  * @param {GraphmlCanvas} canvas - the canvas onto which this graph is being drawn
- * @param {Graph} subgraph - the subgraph whose node elements are currently be drawn
+ * @param {Graph} graph - the subgraph whose node elements are currently be drawn
  */
-GraphmlPaper.prototype.drawNodes = function(canvas, subgraph) {
-	var localNodes = subgraph.getNodes();
-	for(var i = 0, j = localNodes.length; i < j; i++) {
-		var node = this.getNode(localNodes[i]);
-		canvas.setToContentLayer( node.createElement() );
+GraphmlPaper.prototype.drawNodes = function(canvas, graph) {
+	var gid = graph.getId();
+	var localNodes = graph.getNodes();
+	for(var i1 = 0, j1 = localNodes.length; i1 < j1; i1++) {
+		var node = this.getNode(localNodes[i1]);
+		canvas.setToContentLayer( node.createElement(), gid );
+		
+		var localGraphs = node.getSubgraphs();
+		for(var i2 = 0, j2 = localGraphs.length; i2 < j2; i2++)
+			this.drawNodes(canvas, this.getSubgraph(localGraphs[i2]));
 	}
-	
-	var subgraphs = subgraph.getSubgraphs();
-	for(var id in subgraphs)
-		this.drawNodes(canvas, subgraphs[id]);
 }
 
 /**
- * Draw all edges on this paper in order of the subgraph organization
+ * Draw all edges on this paper (in order of the subgraph organization?).
  * @param {GraphmlCanvas} canvas - the canvas onto which this graph is being drawn
  * @param {Graph} subgraph - the subgraph whose edge elements are currently be drawn
  */
@@ -1260,7 +1269,7 @@ GraphmlPaper.prototype.drawEdges = function(canvas, subgraph) {
 }
 
 /**
- * Draw all hyperedges on this paper in order of the subgraph organization
+ * Draw all hyperedges on this paper ( in order of the subgraph organization?).
  * @param {GraphmlCanvas} canvas - the canvas onto which this graph is being drawn
  * @param {Graph} subgraph - the subgraph whose hyoperedge elements are currently be drawn
  */
