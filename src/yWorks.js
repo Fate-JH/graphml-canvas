@@ -20,8 +20,8 @@ yWorks.setup = function(canvas, graph, xml, attributes) {
 	if(!canvas || !graph)
 		throw new Error("Completely unrecoverable situation!  Missing either the canvas or the graph at a crucial setup stage!");
 	
-	yWorks.resolveGraphSize(graph);
-	yWorks.prepareElementsForInitialDraw(canvas, graph);
+	yWorks.setElementsInView(graph);
+	yWorks.clipEdgeEndpointsToNodes(canvas, graph);
 	yWorks.allocateSVGResources(graph, xml);
 	canvas.zoom = yWorks.zoom; //assign
 }
@@ -32,7 +32,7 @@ yWorks.setup = function(canvas, graph, xml, attributes) {
  * @static
  * @param {GraphmlPaper} graph - the structure that contains all of the deployed graphml node data
  */
-yWorks.resolveGraphSize = function(graph) {
+yWorks.setElementsInView = function(graph) {
 	var nodes = graph.getNodes();
 	var edges = graph.getEdges();
 	var lowerx = Infinity, lowery = Infinity, upperx = -Infinity, uppery = -Infinity;
@@ -41,7 +41,7 @@ yWorks.resolveGraphSize = function(graph) {
 		var data = nodes[id].getRepresentation();
 		if(!data)
 			continue;
-		data = data.getAttributes();
+		data = data.getBounds();
 		var x = data.x, y = data.y, xw = x + data.width, yh = y + data.height;
 		if(x < lowerx)
 			lowerx = x;
@@ -69,16 +69,17 @@ yWorks.resolveGraphSize = function(graph) {
 		if(!data)
 			continue;
 		data = data.getAttributes();
-		var px = data.px, py = data.py;
-		for(var i = 0, j = px.length; i < j; i++) {
-			if(px[i] < lowerx)
-				lowerx = px[i];
-			else if(px[i] > upperx)
-				upperx = px[i];
-			if(py[i] < lowery)
-				lowery = py[i];
-			else if(py[i] > uppery)
-				uppery = py[i];
+		var points = data.points;
+		for(var i = 0, j = points.length; i < j; i++) {
+			var point = points[i];
+			if(point.x < lowerx)
+				lowerx = point.x;
+			if(point.x > upperx)
+				upperx = point.x;
+			if(point.y < lowery)
+				lowery = point.y;
+			if(point.y > uppery)
+				uppery = point.y;
 			// TODO: edges can also have notes; currently we don't account for them, though
 		}
 	}
@@ -97,15 +98,15 @@ yWorks.resolveGraphSize = function(graph) {
 	graphData.width = (upperx - lowerx);
 	graphData.height = (uppery - lowery);
 	
-	//TODO: why do we know about the custom canvas padding length?
+	//TODO: in the future, we want all elements to be moved so that the left-most ones and top-most ones are at x=0 and y=0, respectively
  	var cwidth = canvas.getWidth();
 	var correctx = 0;
 	if(lowerx < 0 || upperx > cwidth)
-		correctx = -lowerx + 50; // Note: in terms of content, the left side of the graph will be pushed to left=50
+		correctx = -lowerx;
 	var cheight = canvas.getHeight();
 	var correcty = 0;
 	if(lowery < 0 || uppery > cheight)
-		correcty = -lowery + 50;
+		correcty = -lowery;
 	yWorks.shiftElements(graph, correctx, correcty); // Shift everything within a positive buffer region for the purposes of scrolling
 }
 
@@ -120,44 +121,40 @@ yWorks.resolveGraphSize = function(graph) {
 yWorks.shiftElements = function(graph, dx, dy) {
 	if(dx == 0 && dy == 0)
 		return;
-	// Shift all the elements by x, y units
-	// Nodes
-	var nodes = graph.getNodes();
+	
+	var nodes = graph.getNodes(); // Nodes
 	for(var id in nodes) {
 		var data = nodes[id].getRepresentation();
 		if(!data)
 			continue;
+		data.setBounds({x:dx, y:dy}, true);
 		data = data.getAttributes();
-		data.x += dx;
-		data.y += dy;
 		var notes = data.notes || [];
 		for(var i = 0, j = notes.length; i < j; i++) {
 			notes[i].x += dx;
 			notes[i].y += dy;
 		}
 	}
-	// Edges
-	var edges = graph.getEdges();
+	
+	var edges = graph.getEdges(); // Edges
 	for(var id in edges) {
 		var data = edges[id].getRepresentation();
 		if(!data)
 			continue;
 		data = data.getAttributes();
-		var px = data.px, py = data.py;
-		for(var i = 0, j = px.length; i < j; i++) {
-			px[i] += dx;
-			py[i] += dy;
+		var points = data.points;
+		for(var i = 0, j = points.length; i < j; i++) {
+			points[i].x += dx;
+			points[i].y += dy;
 		}
+		
 		// Move over clipped end coordinates, if they exist
-		var source = data.source;
-		if("x" in source) {
-			source.x += dx;
-			source.y += dy;
-		}
-		var target = data.target;
-		if("x" in target) {
-			target.x += dx;
-			target.y += dy;
+		var endpoints = data.endpoints;
+		if(endpoints) {
+			endpoints.source.x += dx;
+			endpoints.source.y += dy;
+			endpoints.target.x += dx;
+			endpoints.target.y += dy;
 		}
 	}
 	
@@ -172,7 +169,7 @@ yWorks.shiftElements = function(graph, dx, dy) {
  * @param {GraphmlCanvas} canvas - the drawing surface controlling (access to) the HTML components through Javascript
  * @param {GraphmlPaper} graph - the structure that contains all of the deployed graphml node data
  */
-yWorks.prepareElementsForInitialDraw = function(canvas, graph) {
+yWorks.clipEdgeEndpointsToNodes = function(canvas, graph) {
 	var nodes = graph.getNodes();
 	var edges = graph.getEdges();
 	
@@ -182,65 +179,62 @@ yWorks.prepareElementsForInitialDraw = function(canvas, graph) {
 		if(!data)
 			continue;
 		data = data.getAttributes();
-		var source = data.source;
-		var target = data.target;
-		var px = data.px;
-		var py = data.py;
 		
 		// 1. Get the source and target node and their centers
-		var sNode = nodes[data.source.id].getRepresentation().getAttributes();
-		var sNodeX = source.x = sNode.x + sNode.width/2 + source.dx;
-		var sNodeY = source.y = sNode.y + sNode.height/2 + source.dy;
-		var tNode = nodes[data.target.id].getRepresentation().getAttributes();
-		var tNodeX = target.x = tNode.x + tNode.width/2 + target.dx;
-		var tNodeY = target.y = tNode.y + tNode.height/2 + target.dy;
+		var snode = nodes[data.src].getRepresentation().getAttributes().geometry;
+		var sx = snode.x + snode.width/2 + data.path.sx;
+		var sy = snode.y + snode.height/2 + data.path.sy;
+		var tnode = nodes[data.tgt].getRepresentation().getAttributes().geometry;
+		var tx = tnode.x + tnode.width/2 + data.path.tx;
+		var ty = tnode.y + tnode.height/2 + data.path.ty;
+		var endpoints = data.endpoints = {source:{x:sx, y:sy}, target:{x:tx, y:ty}};
 		
 		// 2. Find the width and the height of the element to be created
 		var dx, dy, minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
-		if(sNodeX < minx)
-			minx = sNodeX;
-		if(sNodeX > maxx)
-			maxx = sNodeX;
-		if(sNodeY < miny)
-			miny = sNodeY;
-		if(sNodeY > maxy)
-			maxy = sNodeY;
-		if(tNodeX < minx)
-			minx = tNodeX;
-		if(tNodeX > maxx)
-			maxx = tNodeX;
-		if(tNodeY < miny)
-			miny = tNodeY;
-		if(tNodeY > maxy)
-			maxy = tNodeY;
-		var len = px.length;
-		for(var i = 0; i < len; i++) {
-			dx = px[i];
-			dy = py[i];
-			if(dx < minx)
-				minx = dx;
-			if(dx > maxx)
-				maxx = dx;
-			if(dy < miny)
-				miny = dy;
-			if(dy > maxy)
-				maxy = dy;
+		if(sx < minx)
+			minx = sx;
+		if(sx > maxx)
+			maxx = sx;
+		if(sy < miny)
+			miny = sy;
+		if(sy > maxy)
+			maxy = sy;
+		if(tx < minx)
+			minx = tx;
+		if(tx > maxx)
+			maxx = tx;
+		if(ty < miny)
+			miny = ty;
+		if(ty > maxy)
+			maxy = ty;
+		var points = data.points;
+		for(var i = 0, j = points.length; i < j; i++) {
+			var point = points[i];
+			if(point.x < minx)
+				minx = point.x;
+			if(point.x > maxx)
+				maxx = point.x;
+			if(point.y < miny)
+				miny = point.y;
+			if(point.y > maxy)
+				maxy = point.y;
 		}
-		data.x = minx;
-		data.y = miny;
-		data.width = maxx;
-		data.height = maxy;
+		var geometry = data.geometry = {};
+		geometry.x = minx;
+		geometry.y = miny;
+		geometry.width = maxx;
+		geometry.height = maxy;
 		
 		// 3. Truncate the ends of the lines so that terminate at the nodes properly
-		var obj = yWorks.clipPosition(graph, "source", data);
+		var obj = yWorks.clipEndpoint(graph, "source", data);
 		if(obj != null) {
-			source.x = obj.x;
-			source.y = obj.y;
+			endpoints.source.x = obj.x;
+			endpoints.source.y = obj.y;
 		}
-		var obj = yWorks.clipPosition(graph, "target", data);
+		var obj = yWorks.clipEndpoint(graph, "target", data);
 		if(obj != null) {
-			target.x = obj.x;
-			target.y = obj.y;
+			endpoints.target.x = obj.x;
+			endpoints.target.y = obj.y;
 		}
 	}
 }
@@ -254,75 +248,60 @@ yWorks.prepareElementsForInitialDraw = function(canvas, graph) {
  * @param {Object} data - information regarding the entirety of the edge
  * @returns {Object} this object contains the coordinates for the new specified terminus of the edge, or is null
  */
-yWorks.clipPosition = function(graph, side, data) {
-	var dx1, dy1; // The endpoint opposite the specified one
+yWorks.clipEndpoint = function(graph, side, data) {
+	var x1, y1; // The endpoint opposite the one specified in the parameters
 	if(side == "source") {
-		dx1 = data.px[0] || data.target.x;
-		dy1 = data.py[0] || data.target.y;
+		var point = data.points[0];
+		if(point) {
+			x1 = point.x;
+			y1 = point.y;
+		}
+		else {
+			x1 = data.endpoints.target.x;
+			y1 = data.endpoints.target.y;
+		}
 	}
 	else if(side == "target") {
-		var len1 = data.px.length-1;
-		dx1 = data.px[len1] || data.source.x;
-		dy1 = data.py[len1] || data.source.y;
+		var point = data.points[data.points.length-1];
+		if(point) {
+			x1 = point.x;
+			y1 = point.y;
+		}
+		else {
+			x1 = data.endpoints.source.x;
+			y1 = data.endpoints.source.y;
+		}
 	}
 	else // Error checking, in case side data was passed incorrectly
 		return null;
 	
-	var sideData = data[side];
-	var bounds = graph.getNode([sideData.id]).getBounds(); // A format that describes the perimeter of the node assigned to the endpoint
-	var dx0 = sideData.x;
-	var dy0 = sideData.y;
+	var endpoints = data.endpoints[side];
+	var x0 = endpoints.x;
+	var y0 = endpoints.y;
 	
-	var bx = +bounds.x, by = +bounds.y, bw = +bounds.width, bh = +bounds.height, bxw = bx + bw, byh = by + bh;
-	var dat = [ [dx0,dy0, dx1,dy1, bx,by, bxw,by],
-				[dx0,dy0, dx1,dy1, bxw,by, bxw,byh],
-				[dx0,dy0, dx1,dy1, bx,byh, bxw,byh],
-				[dx0,dy0, dx1,dy1, bx,by, bx,byh]]; // Array of Arrays of coordinates describing (0-3) the edge and (4-7) the decomposed perimeter of the Node
-	var collisionIndex = -1;
-	var rtn = [];
-	for(var i = 0, j= 4; i < j; i++) {
-		rtn.push( yWorks.linearIntersect.apply(yWorks, dat[i]) );
-		if(rtn[i].intersects) {
-			if(collisionIndex > -1) {
-				if(rtn[collisionIndex].x != rtn[i].x || rtn[collisionIndex].y != rtn[i].y) // If found the same point, assume a corner and overlook; else return failure
-					return null;
+	var bounds = graph.getNode(data[side == "source" ? "src" : "tgt"]).getRepresentation().getAttributes().geometry;
+	var x2 = +bounds.x;
+	var y2 = +bounds.y;
+	var x3 = x2 + bounds.width;
+	var y3 = y2 + bounds.height;
+	var dat = [ [x0,y0, x1,y1, x2,y2, x2,y3],
+				[x0,y0, x1,y1, x2,y3, x3,y3],
+				[x0,y0, x1,y1, x3,y3, x3,y2],
+				[x0,y0, x1,y1, x3,y2, x2,y2]]; // Array of Arrays of coordinates describing the edge (0-1) and the decomposed perimeter of the Node (2-3)
+	
+	var intersection = null;
+	for(var i = 0, j = 4; i < j; i++) {
+		var rtn = yWorks.linearIntersect.apply(yWorks, dat[i]);
+		if(rtn.intersects) {
+			if(intersection) {
+				if(rtn.x == intersection.x && rtn.y == intersection.y) // If the same point is encountered, assume a corner, and overlook
+					continue;
+				return null; // TODO: a valid condition still exists here - the endpoint of edge 0-1 is on one of the boundary lines 2-3
 			}
-			else
-				collisionIndex = i;
+			intersection = rtn;
 		}
 	}
-	return rtn[collisionIndex];
-} 
-
-/**
- * Extract SVG resources embedded at the yWorks graphml data and assign it to appropriate SVGNodes
- * @private
- * @static
- * @param {Graph} graph - the structure that contains all of the deployed graphml node data
- * @param {XML} data - the original graphml data
- */
-yWorks.allocateSVGResources = function(graph, xml) {
-	var resourceGroup = xml.getElementsByTagName("y:Resources")[0]; // Find resources
-	if(!resourceGroup)
-		return;
-	
-	var resources = resourceGroup.getElementsByTagName("y:Resource");
-	var nodes = graph.getNodes(); // SVG-type Node elements interleaved with other elements
-	for(var id in nodes) {
-		var node = nodes[id];
-		if(node.getRepresentationName() == "SVGNode") {
-			var rep = node.getRepresentation();
-			var resNum = rep.getRefid();
-			var resElem = resources[(+resNum)-1]; // They're numbered, one-indexed (remember: this is a NodeList, not an Array)
-			if(resElem) {
-				var content = resElem.firstChild && resElem.firstChild.nodeValue;
-				if(content) {
-					content = content.replace(/&lt;/g, "<").replace(/&gt;/g, ">"); // Switch out xml-safe encoding for normal symbol
-					rep.setRef(content);
-				}
-			}
-		}
-	}
+	return intersection;
 }
 
 /**
@@ -339,7 +318,7 @@ yWorks.allocateSVGResources = function(graph, xml) {
  * @return {Number} rtn.x, rtn.y - if there is an intersection, these are the coordinates of that point
  */
 yWorks.linearIntersect = function(ax, ay, bx, by, cx, cy, dx, dy) {
- /*
+/*
  * 1. Find the coordinate change in the lines:
  *		bax = bx - ax
  *		bay = by - ay
@@ -348,7 +327,7 @@ yWorks.linearIntersect = function(ax, ay, bx, by, cx, cy, dx, dy) {
  *		a[x,y] + <bax,bay> = b[x,y]
  *		c[x,y] + <dcx,dcy> = d[x,y]
  * 2. S and T are different factors in the range of 0...1 that mark a point on both lines:
- * 		a[x,y] + S<bax,bay> = c[x,y] + T<dcx,dcy>
+ *		a[x,y] + S<bax,bay> = c[x,y] + T<dcx,dcy>
  *		S<bax,bay> - T<dcx,dcy> = c[x,y] - a[x,y]
  *		S<bax>,S<bay> - T<dcx>,T<dcy> = [rx = cx - ax, ry = cy - ay]
  *		S<bax> - T<dcx> = rx
@@ -424,6 +403,37 @@ yWorks.linearIntersect = function(ax, ay, bx, by, cx, cy, dx, dy) {
 			return {intersects:false};
 	}
 	return {intersects:true, x:intersectx, y:intersecty};
+}
+
+/**
+ * Extract SVG resources embedded at the yWorks graphml data and assign it to appropriate SVGNodes
+ * @private
+ * @static
+ * @param {Graph} graph - the structure that contains all of the deployed graphml node data
+ * @param {XML} data - the original graphml data
+ */
+yWorks.allocateSVGResources = function(graph, xml) {
+	var resourceGroup = xml.getElementsByTagName("y:Resources")[0]; // Find resources
+	if(!resourceGroup)
+		return;
+	
+	var resources = resourceGroup.getElementsByTagName("y:Resource");
+	var nodes = graph.getNodes(); // SVG-type Node elements interleaved with other elements
+	for(var id in nodes) {
+		var node = nodes[id];
+		if(node.getRepresentationName() == "SVGNode") {
+			var rep = node.getRepresentation();
+			var resNum = rep.getRefid();
+			var resElem = resources[(+resNum)-1]; // They're numbered, one-indexed (remember: this is a NodeList, not an Array)
+			if(resElem) {
+				var content = resElem.firstChild && resElem.firstChild.nodeValue;
+				if(content) {
+					content = content.replace(/&lt;/g, "<").replace(/&gt;/g, ">"); // Switch out xml-safe encoding for normal symbol
+					rep.setRef(content);
+				}
+			}
+		}
+	}
 }
 
 /**
@@ -560,21 +570,26 @@ yWorks.zoom = function(factor) {
  * @param {Number} attributes.borderWidth - na
  * @param {XML} xml - the original markup of this element
  */
-yWorks.getBasicGeometry = function(attributes, xml) {
+yWorks.getCommonFields = function(attributes, xml) {
 	var g;
 	g = xml.getElementsByTagName("y:Geometry")[0];
-	attributes.x = +g.getAttribute("x");
-	attributes.y = +g.getAttribute("y");
-	attributes.width = +g.getAttribute("width");
-	attributes.height = +g.getAttribute("height");
+	attributes.geometry = {};
+	attributes.geometry.x = attributes.x = +g.getAttribute("x");
+	attributes.geometry.y = attributes.y = +g.getAttribute("y");
+	attributes.geometry.width = attributes.width = +g.getAttribute("width");
+	attributes.geometry.height = attributes.height = +g.getAttribute("height");
 	g = xml.getElementsByTagName("y:Fill")[0];
-	attributes.bgColor = g.getAttribute("color");
-	attributes.color2 = g.getAttribute("color2");
-	attributes.transparent = g.getAttribute("transparent");
+	attributes.fill = {};
+	attributes.fill.hasColor = g.getAttribute("hasColor") == "true";
+	attributes.fill.color = attributes.bgColor = g.getAttribute("color");
+	attributes.fill.color2 = attributes.color2 = g.getAttribute("color2");
+	attributes.fill.transparent = attributes.transparent = g.getAttribute("transparent") == "true";
 	g = xml.getElementsByTagName("y:BorderStyle")[0];
-	attributes.borderColor = g.getAttribute("color") || "none";
-	attributes.borderStyle = g.getAttribute("type");
-	attributes.borderWidth = +g.getAttribute("width");
+	attributes.borderStyle1 = {};
+	attributes.borderStyle1.hasColor = g.getAttribute("hasColor") == "true";
+	attributes.borderStyle1.borderColor = attributes.borderColor = g.getAttribute("color") || "none";
+	attributes.borderStyle1.borderStyle = attributes.borderStyle = g.getAttribute("type");
+	attributes.borderStyle1.borderWidth = attributes.borderWidth = +g.getAttribute("width");
 }
 
 /**
@@ -585,14 +600,14 @@ yWorks.getBasicGeometry = function(attributes, xml) {
  * @param {XML} xml - the original markup of this element
  */
 yWorks.getStyleProperties = function(attributes, xml) {
-	var style = attributes.style = {};
+	var styles = attributes.styleProperties = {};
 	var g = xml.getElementsByTagName("y:StyleProperties")[0];
 	if(g) {
 		g = g.getElementsByTagName("y:Property");
 		for(var i = 0, j = g.length; i < j; i++) {
 			var name = g[i].getAttribute("name");
 			var value = g[i].getAttribute("value");
-			style[name] = value;
+			styles[name] = value;
 		}
 	}
 }
@@ -651,7 +666,8 @@ yWorks.getLabels = function(attributes, xml) {
 		note.lineColor = note.hasLineColor ? label.getAttribute("lineColor") : "none";
 		
 		note.textAlign = label.getAttribute("alignment");
-		note.autoSizePolicy = label.getAttribute("autoSizePolicy") == "content";
+		note.autoSizePolicy = label.getAttribute("autoSizePolicy");
+		note.modelName = label.getAttribute("modelName");
 		note.fontFamily = label.getAttribute("fontFamily");
 		note.fontSize = +label.getAttribute("fontSize");
 		note.fontStyle = label.getAttribute("fontStyle");
@@ -1049,15 +1065,71 @@ yWorks.sbcRip = function(d, i, r) {
 	return RGB;
 }
 
+/**
+ *
+ */
+yWorksRepresentation.prototype = new Representation();
+yWorksRepresentation.prototype.constructor = yWorksRepresentation;
+function yWorksRepresentation(id, attributes) {
+	Representation.call(this, id,attributes);
+}
+
+/**
+ * Get the two-dimensional coordinates and span that explains the canvas-space this element should occupy.
+ * @override
+ */
+yWorksRepresentation.prototype.getBounds = function() {
+	var attr = this.getAttributes();
+	var g = attr.geometry || attr;
+	var X = g.x || 0;
+	var Y = g.y || 0;
+	var W = g.width || 0;
+	var H = g.height || 0;
+	return { x:X, y:Y, width:W, height:H };
+}
+
+/**
+ * Provide updated two-dimensional coordinates and span for this element.
+ * @override
+ */
+yWorksRepresentation.prototype.setBounds = function(bounds, increment) {
+ 	bounds = bounds || {};
+	var attr = this.data;
+	if(increment) {
+		if("x" in bounds)
+			attr.x += bounds.x;
+		if("y" in bounds)
+			attr.y += bounds.y;
+		if("width" in bounds)
+			attr.width += bounds.width;
+		if("height" in bounds)
+			attr.height += bounds.height;
+		attr.geometry.x = attr.x;
+		attr.geometry.y = attr.y;
+		attr.geometry.width = attr.width;
+		attr.geometry.height = attr.height;
+	}
+	else {
+		if("x" in bounds)
+			attr.geometry.x = attr.x = bounds.x;
+		if("y" in bounds)
+			attr.geometry.y = attr.y = bounds.y;
+		if("width" in bounds)
+			attr.geometry.width = attr.width = bounds.width;
+		if("height" in bounds)
+			attr.geometry.height = attr.height = bounds.height;
+	}
+}
+
 
 /**
  * The representation of a UML class block.
  * @override
  */
-UMLClassNode.prototype = new Representation();
+UMLClassNode.prototype = new yWorksRepresentation();
 UMLClassNode.prototype.constructor = UMLClassNode;
 function UMLClassNode(id, attributes) {
-	Representation.call(this, id,attributes);
+	yWorksRepresentation.call(this, id,attributes);
 }
 
 /**
@@ -1068,67 +1140,72 @@ UMLClassNode.prototype.readXML = function(xml) {
 	var attributes = {};
 	
 	attributes.id = xml.getAttribute("id");
-	yWorks.getBasicGeometry(attributes, xml);
-	yWorks.getLabels(attributes, xml); // Only the first label is ever displayed
+	yWorks.getCommonFields(attributes, xml);
+	yWorks.getLabels(attributes, xml); // Only the first label is ever displayed and that is the class name
+	
 	var g;
 	g = xml.getElementsByTagName("y:UML")[0];
-	attributes.stereotype = g.getAttribute("stereotype");
-	attributes.constraint = g.getAttribute("constraint");
-	attributes.clipContent = g.getAttribute("clipContent");
-	attributes.use3DEffect = g.getAttribute("use3DEffect") == "true";
-	attributes.omitDetails = g.getAttribute("omitDetails") == "true";
+	attributes.uml = {};
+	attributes.uml.clipContent = attributes.clipContent = g.getAttribute("clipContent") == "true";
+	attributes.uml.use3DEffect = attributes.use3DEffect = g.getAttribute("use3DEffect") == "true";
+	attributes.uml.omitDetails = attributes.omitDetails = g.getAttribute("omitDetails") == "true";
+	attributes.uml.stereotype = attributes.stereotype = g.getAttribute("stereotype");
+	attributes.uml.constraint = attributes.constraint = g.getAttribute("constraint");
+	
 	g = xml.getElementsByTagName("y:AttributeLabel")[0].firstChild;
-	attributes.properties = g ? g.textContent : null;
+	attributes.uml.properties = attributes.properties = (g ? g.textContent : null);
+	
 	g = xml.getElementsByTagName("y:MethodLabel")[0].firstChild;
-	attributes.methods = g ? g.textContent : null;
+	attributes.uml.methods = attributes.methods = (g ? g.textContent : null);
 	
 	return attributes;
 }
 
 /**
  * Create an HTML component to represent this UML class block.
- * The UMLClassNode object is unique among yWorks elements as it contains no SVG data.
+ * The UMLClassNode object is unique among emulated yWorks elements as it contains no SVG and relies solely on HTML and CSS.
  * @override
  */
 UMLClassNode.prototype.createElement = function(attr) {
 	attr = attr || this.data || {};
-	var cwidth = attr.width+"px";
-	var stereotype = attr.stereotype;
-	var constraint = attr.constraint;
-	var properties = attr.properties;
-	var methods = attr.methods;
-	var content = properties || methods;
-	var omitDetails = attr.omitDetails;
-	var fontStyle = attr.fontStyle;
-	var borderColor = attr.borderColor;
+	var geometry = attr.geometry;
+	var fill = attr.fill;
+	var borderStyle1 = attr.borderStyle1;
+	var uml = attr.uml;
 	
-	var borderStyle = attr.borderStyle; // Attribute border-style needs better parsing for CSS
-	if(attr.use3DEffect)
-		borderStyle = "outset";
-	else if(borderStyle == "dashed_dotted")
-		borderStyle = "dashed";
-	else if(borderStyle == "line")
-		borderStyle = "solid";
-	var overflow = attr.clipContent=="true" ? "hidden" : "visible"; // Attribute overflow needs better parsing for CSS
-	var fontFamily = attr.fontFamily += ", Arial, serif"; // Attribute font-family needs better parsing for CSS (and a fallback)
+	var gwidth = geometry.width+"px";
+	var omitDetails = uml.omitDetails;
+	var properties = uml.properties;
+	var methods = uml.methods;
+	var fields = properties || methods;
 	
-	// uml frame
+	var borderColor = borderStyle1.borderColor;
+	var borderLine = borderStyle1.borderStyle; // Attribute border-style needs better parsing for CSS
+	if(uml.use3DEffect)
+		borderLine = "outset";
+	else if(borderLine == "dashed_dotted")
+		borderLine = "dashed";
+	else if(borderLine == "line")
+		borderLine = "solid";
+	var overflow = uml.clipContent ? "hidden" : "visible"; // Attribute overflow needs better parsing for CSS
+	
 	var containerNode = Representation.prototype.createElement.call(this, attr);
 	containerNode.className = "yWorks uml";
 	
+	// uml frame
 	var contentNode = document.createElement("div"), style = null;
 	contentNode.id = this.id+"-shape";
 	contentNode.className = "yWorks uml frame";
 	style = contentNode.style;
-	style.left = attr.x+"px";
-	style.top = attr.y+"px";
-	style.width = cwidth
-	style.height = attr.height+"px";
-	style["background-color"] = attr.bgColor;
-	style["border-color"] = borderColor;
-	style["border-style"] = borderStyle;
-	style["border-width"] = attr.borderWidth+"px";
-	style.transparent = attr.transparent;
+	style.left = geometry.x+"px";
+	style.top = geometry.y+"px";
+	style.width = gwidth;
+	style.height = geometry.height+"px";
+	style["background-color"] = fill.color;
+	style["border-color"] = uml.use3DEffect ? fill.color : borderColor;
+	style["border-style"] = borderLine;
+	style["border-width"] = borderStyle1.borderWidth+"px";
+	style.opacity = fill.transparent ? 0 : 1; // Note: transparency is the opposite of opacity
 	style.overflow = overflow;
 	containerNode.appendChild(contentNode);
 	
@@ -1136,9 +1213,9 @@ UMLClassNode.prototype.createElement = function(attr) {
 	var featureNode = document.createElement("div");
 	featureNode.id = this.id+"-stereotype";
 	featureNode.className = "yWorks uml stereotype";
-	featureNode.width = cwidth;
-	if(stereotype)
-		featureNode.appendChild(document.createTextNode("<<"+stereotype+">>"));
+	featureNode.width = gwidth;
+	if(uml.stereotype)
+		featureNode.appendChild(document.createTextNode("<<"+uml.stereotype+">>"));
 	contentNode.appendChild(featureNode);
 	
 	// uml class name (borrows code from yWorks.createLabels)
@@ -1148,7 +1225,7 @@ UMLClassNode.prototype.createElement = function(attr) {
 	var note = attr.notes[0] || {content:"Class", fontColor:"#000000", fontSize:10};
 	var content = yWorks.splitOnNewLines(featureNode, note.content, "className");
 	style = featureNode.style;
-	style.width = cwidth+"px";
+	style.width = gwidth;
 	style.height = note.height+"px";
 	style["fontColor"] = note.fontColor;
 	style["fontFamily"] = note.fontFamily += ", Arial, serif";
@@ -1172,17 +1249,17 @@ UMLClassNode.prototype.createElement = function(attr) {
 	featureNode = document.createElement("div");
 	featureNode.id = this.id+"-constraint";
 	featureNode.className = "yWorks uml constraint";
-	featureNode.width = cwidth;
-	if(constraint)
-		featureNode.appendChild(document.createTextNode("{"+constraint+"}"));
+	featureNode.width = gwidth;
+	if(uml.constraint)
+		featureNode.appendChild(document.createTextNode("{"+uml.constraint+"}"));
 	contentNode.appendChild(featureNode);
 	
-	// uml content divider
+	// uml fields divider
 	featureNode = document.createElement("div");
-	featureNode.id = this.id+"-topDivider";
-	if(content && !omitDetails) {
+	featureNode.id = this.id+"-divider-properties";
+	if(fields && !omitDetails) {
 		featureNode.className = "yWorks uml divider";
-		featureNode.width = cwidth;
+		featureNode.width = gwidth;
 		var style = featureNode.style;
 		style["border-top-color"] = borderColor;
 	}
@@ -1192,20 +1269,20 @@ UMLClassNode.prototype.createElement = function(attr) {
 	featureNode = document.createElement("div");
 	featureNode.id = this.id+"-properties";
 	featureNode.className = "yWorks uml properties";
-	featureNode.width = cwidth;
+	featureNode.width = gwidth;
 	if(properties && !omitDetails) {
 		yWorks.splitOnNewLines(featureNode, properties, "yWorks uml entry");
 	}
 	contentNode.appendChild(featureNode);
 	
-	// uml content divider	
+	// uml fields divider	
 	featureNode = document.createElement("div");
-	featureNode.id = this.id+"-bottomDivider";
-	if(content && !omitDetails) {
+	featureNode.id = this.id+"-divider-methods";
+	if(fields && !omitDetails) {
 		featureNode.className = "yWorks uml divider";
-		featureNode.width = cwidth;
+		featureNode.width = gwidth;
 		var style = featureNode.style;
-		style["border-top-color"] = attr.borderColor;
+		style["border-top-color"] = borderColor;
 	}
 	contentNode.appendChild(featureNode);
 	
@@ -1213,7 +1290,7 @@ UMLClassNode.prototype.createElement = function(attr) {
 	featureNode = document.createElement("div");
 	featureNode.id = this.id+"-methods";
 	featureNode.className = "yWorks uml methods";
-	featureNode.width = cwidth;
+	featureNode.width = gwidth;
 	if(methods && !omitDetails) {
 		yWorks.splitOnNewLines(featureNode, methods, "yWorks uml entry");
 	}
@@ -1224,13 +1301,13 @@ UMLClassNode.prototype.createElement = function(attr) {
 
 /**
  * The representation of a UML note block.
- * (I do not believe this is a standard UML component.  It is probably a product of the namespace solely.)
+ * (I do not believe this is a standard UML component.)
  * @override
  */
-UMLNoteNode.prototype = new Representation();
+UMLNoteNode.prototype = new yWorksRepresentation();
 UMLNoteNode.prototype.constructor = UMLNoteNode;
 function UMLNoteNode(id, attributes) {
-	Representation.call(this, id,attributes);
+	yWorksRepresentation.call(this, id,attributes);
 }
 
 /**
@@ -1240,7 +1317,7 @@ function UMLNoteNode(id, attributes) {
 UMLNoteNode.prototype.readXML = function(xml) {
 	var attributes = {};
 	attributes.id = xml.getAttribute("id");
-	yWorks.getBasicGeometry(attributes, xml);
+	yWorks.getCommonFields(attributes, xml);
 	yWorks.getLabels(attributes, xml);
 	return attributes;
 }
@@ -1250,20 +1327,18 @@ UMLNoteNode.prototype.readXML = function(xml) {
  * @override
  */
 UMLNoteNode.prototype.createElement = function(attr) {
-	var cattr = attr || this.data || {};
-	var svgns = "http://www.w3.org/2000/svg";
-	var x = cattr.x, y = cattr.y;
-	var w = cattr.width, h = cattr.height;
-	var bgColor = cattr.bgColor, bdColor = cattr.borderColor, bdWidth = cattr.borderWidth;
-	var lineStyle = yWorks.createSVGLinePattern(cattr.borderStyle, bdWidth);
+	attr = attr || this.data || {};
+	var geometry = attr.geometry;
+	var fill = attr.fill;
+	var borderStyle1 = attr.borderStyle1;
 	
-	var borderStyle = cattr.borderStyle; // Attribute border-style needs better parsing for CSS
-	if(!bdColor || bdColor == "none")
-		borderStyle = "none";
-	else if(borderStyle == "dashed_dotted")
-		borderStyle = "dashed";
-	else if(borderStyle == "line")
-		borderStyle = "solid";
+	var x = geometry.x;
+	var y = geometry.y;
+	var w = geometry.width;
+	var h = geometry.height;
+	
+	var borderColor = borderStyle1.borderColor;
+	var lineStyle = yWorks.createSVGLinePattern(borderStyle1.borderStyle, borderStyle1.borderWidth);
 	
 	// uml note frame
 	var containerNode = Representation.prototype.createElement.call(this, attr);
@@ -1272,14 +1347,15 @@ UMLNoteNode.prototype.createElement = function(attr) {
 	// uml note background
 	var contentNode = document.createElement("div");
 	contentNode.className = "yWorks note frame";
-	contentNode.id = cattr.id+"-shape";
+	contentNode.id = this.id+"-shape";
 	style = contentNode.style;
-	style.left = cattr.x+"px";
-	style.top = cattr.y+"px";
-	style.width = cattr.width+"px";
-	style.height = cattr.height+"px";
+	style.left = x+"px";
+	style.top = y+"px";
+	style.width = w+"px";
+	style.height = h+"px";
 	containerNode.appendChild(contentNode);
 	
+	var svgns = "http://www.w3.org/2000/svg";
 	var svg = document.createElementNS(svgns, "svg"), style = null;
 	svg.setAttributeNS(null, "width", w+1);
 	svg.setAttributeNS(null, "height", h+1);
@@ -1288,35 +1364,37 @@ UMLNoteNode.prototype.createElement = function(attr) {
 	style.top = y+"px";
 	contentNode.appendChild(svg);
 	
-	var path = document.createElementNS(svgns, "path"), d = null; // Outline
+	var fold = (w < 20 || h < 20) ? Math.min(w, h) * 0.75 : 15;
+	var path = document.createElementNS(svgns, "path"), d = ""; // Outline
 	d = "";
 	d += "M 0 0";
-	d += " L "+(w-14)+" 0";
-	d += " L "+(w)+" "+(14);
-	d += " L "+(w)+" "+(h);
 	d += " L 0 "+(h);
+	d += " L "+(w)+" "+(h);
+	d += " L "+(w)+" "+(fold);
+	d += " L "+(w-fold)+" 0";
 	d += " L 0 0 Z"
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", lineStyle);
 	style = path.style;
-	style.fill = yWorks.setupLinearGradient(svg, {id:this.id+"_gradient", width:w, height:h, color1:cattr.bgColor, color2:cattr.color2}).color;
-	style.stroke = bdColor;
+	style.fill = fill.color;
+	style.stroke = borderColor;
 	svg.appendChild(path);
 	
 	path = document.createElementNS(svgns, "path"); // Folded corner
 	d = "";
-	d += "M "+(w-14)+" 0";
-	d += " L "+(w-14)+" "+(14);
-	d += " L "+(w)+" "+(14);
+	d += "M "+(w-fold)+" 0";
+	d += " L "+(w-fold)+" "+(fold);
+	d += " L "+(w)+" "+(fold);
+	d += " L "+(w-fold)+" 0 Z";
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", lineStyle);
 	style = path.style;
-	style.fill = "none";
-	style.stroke = bdColor;
+	style.fill = "white";
+	style.stroke = borderColor;
 	svg.appendChild(path);
 	
 	// uml note content
-	yWorks.createLabels(cattr, containerNode);
+	yWorks.createLabels(attr, containerNode);
 	return containerNode;
 }
 
@@ -1325,10 +1403,10 @@ UMLNoteNode.prototype.createElement = function(attr) {
  * The representation of a number of geometric shapes.
  * @override
  */
-ShapeNode.prototype = new Representation();
+ShapeNode.prototype = new yWorksRepresentation();
 ShapeNode.prototype.constructor = ShapeNode;
 function ShapeNode(id, attributes) {
-	Representation.call(this, id,attributes);
+	yWorksRepresentation.call(this, id,attributes);
 }
 
 /**
@@ -1339,7 +1417,7 @@ ShapeNode.prototype.readXML = function(xml) {
 	var attributes = {};
 	
 	attributes.id = xml.getAttribute("id");
-	yWorks.getBasicGeometry(attributes, xml);
+	yWorks.getCommonFields(attributes, xml);
 	yWorks.getLabels(attributes, xml);
 	
 	var g = xml.getElementsByTagName("y:Shape")[0];
@@ -1353,14 +1431,8 @@ ShapeNode.prototype.readXML = function(xml) {
  * @override
  */
 ShapeNode.prototype.createElement = function(attr) {
-	var cattr = attr || this.data || {};
-	var bgColor = cattr.bgColor, bdColor = cattr.borderColor, bdWidth = cattr.borderWidth;
-	
-	var bdStyle = cattr.borderStyle; // Attribute border-style needs better parsing for CSS
-	if(bdStyle == "dashed_dotted")
-		bdStyle = "dashed";
-	else if(bdStyle == "line")
-		bdStyle = "solid";
+	attr = attr || this.data || {};
+	var geometry = attr.geometry;
 	
 	// shape frame
 	var containerNode = Representation.prototype.createElement.call(this, attr);
@@ -1371,15 +1443,15 @@ ShapeNode.prototype.createElement = function(attr) {
 	contentNode.id = this.id+"-shape";
 	contentNode.className = "yWorks shape frame";
 	style = contentNode.style;
-	style.left = cattr.x+"px";
-	style.top = cattr.y+"px";
-	style.width = cattr.width+"px";
-	style.height = cattr.height+"px";
-	contentNode.appendChild( ShapeNode.createShape(cattr.shape, cattr) );
+	style.left = geometry.x+"px";
+	style.top = geometry.y+"px";
+	style.width = geometry.width+"px";
+	style.height = geometry.height+"px";
+	contentNode.appendChild( ShapeNode.switchShape(attr.shape, attr) );
 	containerNode.appendChild(contentNode);
 	
 	//shape text
-	yWorks.createLabels(cattr, containerNode);
+	yWorks.createLabels(attr, containerNode);
 	return containerNode;
 }
 
@@ -1388,50 +1460,49 @@ ShapeNode.prototype.createElement = function(attr) {
  * This hub function branches to the specific shape to be drawn in SVG.
  * @private
  * @static
- * @param {String} shape - the name of the shape to be drawn
+ * @param {String} shape - the name of the shape to be drawn (explicit)
  * @param {Object} attributes - other information essential to this function
  * @returns {SVGElement} the container of the SVG data
  */
-ShapeNode.createShape = function(shape, attributes) {
-	var cattr = attributes || {};
+ShapeNode.switchShape = function(shape, attributes) {
+	if(!attributes)
+		return;
 	
-	var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"), style = null;
-	svg.setAttributeNS(null, "width", cattr.width+1);
-	svg.setAttributeNS(null, "height", cattr.height+1);
-	style = svg.style;
-	style.left = (cattr.x - 1)+"px";
-	style.top = (cattr.y - 1)+"px";
+	var geometry = attributes.geometry;
+	var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	svg.setAttributeNS(null, "width", geometry.width+1);
+	svg.setAttributeNS(null, "height", geometry.height+1);
 	
 	switch(shape) {
 		case "diamond":
-			ShapeNode.diamondShape(svg, shape, cattr);
+			ShapeNode.diamondShape(svg, shape, attributes);
 			break;
 		case "octagon":
-			ShapeNode.octagonShape(svg, shape, cattr);
+			ShapeNode.octagonShape(svg, shape, attributes);
 			break;
 		case "trapezoid":
 		case "trapezoid2":
-			ShapeNode.trapezoidShape(svg, shape, cattr);
+			ShapeNode.trapezoidShape(svg, shape, attributes);
 			break;
 		case "triangle":
-			ShapeNode.triangleShape(svg, shape, cattr);
+			ShapeNode.triangleShape(svg, shape, attributes);
 			break;
 		case "hexagon":
-			ShapeNode.hexagonShape(svg, shape, cattr);
+			ShapeNode.hexagonShape(svg, shape, attributes);
 			break;
 		case "parallelogram":
-			ShapeNode.parallelogramShape(svg, shape, cattr);
+			ShapeNode.parallelogramShape(svg, shape, attributes);
 			break;
 		case "ellipse":
-			ShapeNode.ellipseShape(svg, shape, cattr);
+			ShapeNode.ellipseShape(svg, shape, attributes);
 			break;
 		case "rectangle":
 		case "rectangle3d":
 		case "roundrectangle":
-			ShapeNode.rectangleShape(svg, shape, cattr);
+			ShapeNode.rectangleShape(svg, shape, attributes);
 			break;
 		default:
-			console.log("No graphics for "+cattr.id+"; please construct proper "+shape+" element");
+			console.log("No graphics for "+attributes.id+"; please construct proper "+shape+" element");
 	}
 	return svg;
 }
@@ -1445,18 +1516,21 @@ ShapeNode.createShape = function(shape, attributes) {
  * @param {String} attr - other information essential to this function
  */
 ShapeNode.ellipseShape = function(svg, shape, attr) {
-	var ellipse = document.createElementNS("http://www.w3.org/2000/svg", "ellipse"), style = null;
-	var rx = attr.width/2;
-	var ry = attr.height/2;
-	ellipse.setAttributeNS(null, "rx", rx);
-	ellipse.setAttributeNS(null, "ry", ry);
-	ellipse.setAttributeNS(null, "cx", rx + 0.5);
-	ellipse.setAttributeNS(null, "cy", ry + 0.5);
+	var geometry = attr.geometry || attr;
+	var fill = attr.fill || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w2 = w/2;
+	var h = geometry.height, h2 = h/2;
 	
-	style = ellipse.style;
-	style["stroke-width"] = attr.borderWidth;
-	style.fill = attr.bgColor || "none";
-	style.stroke = attr.borderColor;
+	var ellipse = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+	ellipse.setAttributeNS(null, "rx", w2);
+	ellipse.setAttributeNS(null, "ry", h2);
+	ellipse.setAttributeNS(null, "cx", w2 + 0.5);
+	ellipse.setAttributeNS(null, "cy", h2 + 0.5);
+	var style = ellipse.style;
+	style.fill = fill.color;
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = borderStyle.borderWidth;
 	
 	svg.appendChild(ellipse);
 }
@@ -1470,59 +1544,57 @@ ShapeNode.ellipseShape = function(svg, shape, attr) {
  * @param {String} attr - other information essential to this function
  */
 ShapeNode.rectangleShape = function(svg, shape, attr) {
-	var width = attr.width;
-	var height = attr.height;
-	var svgns = "http://www.w3.org/2000/svg";
-	var borderColor = attr.borderColor || "none";
+	var geometry = attr.geometry || attr;
+	var fill = attr.fill || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w2 = w/2;
+	var h = geometry.height, h2 = h/2;
+	var borderColor = borderStyle.borderColor;
+	var borderWidth = borderStyle.borderWidth;
 	
+	var svgns = "http://www.w3.org/2000/svg";
 	var rect = document.createElementNS(svgns, "rect"), style = null;
-	rect.setAttributeNS(null, "width", width);
-	rect.setAttributeNS(null, "height", height);
+	rect.setAttributeNS(null, "width", w);
+	rect.setAttributeNS(null, "height", h);
 	if(shape.indexOf("round") == 0) {
-		rect.setAttributeNS(null, "rx", 5); // These are always 5
-		rect.setAttributeNS(null, "ry", 5);
+		var d = Math.min(w, h)
+		var r = d < 10 ? d/2 : 5;
+		rect.setAttributeNS(null, "rx", r);
+		rect.setAttributeNS(null, "ry", r);
 	}
-	rect.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(attr.borderStyle, attr.borderWidth));
+	rect.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderWidth));
 	style = rect.style;
-	style.left = "1px";
-	style["stroke-width"] = attr.borderWidth;
-	style.fill = attr.bgColor || "none";
+	style.fill = fill.color;
 	style.stroke = borderColor;
-	style.position = "absolute";
+	style["stroke-width"] = borderWidth;
 	
 	svg.appendChild(rect);
 	
 	if(shape.search("3d") != -1) {
 		var polyline = document.createElementNS(svgns, "polyline");
 		var points = "";
-		points += "0,"+height;
+		points += "0,"+h;
 		points += " 0,1";
-		points += " "+width+",1";
+		points += " "+w+",1";
 		polyline.setAttributeNS(null, "points", points);
 		style = polyline.style;
 		style.fill = "none";
-		style.left = "1px";
-		style["stroke-width"] = 1; //attr.borderWidth;
+		style["stroke-width"] = borderWidth;
 		style.stroke = yWorks.shadeBlendConvert(0.5, borderColor, "#FFFFFF");
-		style.position = "absolute";
 		svg.appendChild(polyline);
 		
 		polyline = document.createElementNS(svgns, "polyline");
 		points = "";
-		points += "0,"+height;
-		points += " "+width+","+height;
-		points += " "+width+",0";
+		points += "0,"+h;
+		points += " "+w+","+h;
+		points += " "+w+",0";
 		polyline.setAttributeNS(null, "points", points);
 		style = polyline.style;
 		style.fill = "none";
-		style.left = "1px";
-		style["stroke-width"] = 1; //attr.borderWidth;
+		style["stroke-width"] = borderWidth;
 		style.stroke = yWorks.shadeBlendConvert(-0.5, borderColor, "#000000");
-		style.position = "absolute";
 		svg.appendChild(polyline);
 	}
-	else
-		style.stroke = borderColor;
 }
 
 /**
@@ -1534,30 +1606,32 @@ ShapeNode.rectangleShape = function(svg, shape, attr) {
  * @param {String} attr - other information essential to this function
  */
 ShapeNode.parallelogramShape = function(svg, shape, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"), style = null;
-	var width = attr.width;
-	var height = attr.height;
-	var tenthWidth = width/10;
-	var d = "";
-	d += "M "+tenthWidth+" 0";
-	d += " L "+width+" 0";
-	d += " L "+(width-tenthWidth)+" "+height;
-	d += " L 0 "+height+" Z";
-	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(attr.borderStyle, attr.borderWidth));
+	var geometry = attr.geometry || attr;
+	var fill = attr.fill || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width;
+	var h = geometry.height;
+	var w10 = w/10;
 	
-	style = path.style;
-	style.left = "1px";
-	style["stroke-width"] = attr.borderWidth;
-	style.fill = attr.bgColor || "none";
-	style.stroke = attr.borderColor || "none";
-	style.position = "absolute";
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M "+(w10)+" 0";
+	d += " L "+(w)+" 0";
+	d += " L "+(w-w10)+" "+(h);
+	d += " L 0 "+(h)+" Z";
+	path.setAttributeNS(null, "d", d);
+	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	var style = path.style;
+	style.fill = fill.color;
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = borderStyle.borderWidth;
 	
 	svg.appendChild(path);
 }
 
 /**
  * Draw a hexagon shape for this element.
+ * This hexagon is not a regular hexagon so the proportions are intentional.
  * @private
  * @static
  * @param {SVGElement} svg - the container for this drawing
@@ -1565,29 +1639,27 @@ ShapeNode.parallelogramShape = function(svg, shape, attr) {
  * @param {String} attr - other information essential to this function
  */
 ShapeNode.hexagonShape = function(svg, shape, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"), style = null;
-	var width = attr.width;
-	var height = attr.height;
-	var tenthWidth = width/10;
-	var halfHeight = height/2;
+	var geometry = attr.geometry || attr;
+	var fill = attr.fill || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w10 = w/10;
+	var h = geometry.height, h2 = h/2;
 	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	var d = "";
-	d += "M "+tenthWidth+" 0";
-	d += " L "+(width-tenthWidth)+" 0";
-	d += " L "+width+" "+halfHeight;
-	d += " L "+(width-tenthWidth)+" "+height;
-	d += " L "+tenthWidth+" "+height;
-	d += " L 0 "+halfHeight;
-	d += " L "+tenthWidth+" 0 Z";
+	d += "M "+(w10)+" 0";
+	d += " L "+(w-w10)+" 0";
+	d += " L "+(w)+" "+(h2);
+	d += " L "+(w-w10)+" "+(h);
+	d += " L "+(w10)+" "+(h);
+	d += " L 0 "+(h2);
+	d += " L "+(w10)+" 0 Z";
 	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(attr.borderStyle, attr.borderWidth));
-	
-	style = path.style;
-	style.left = "1px";
-	style["stroke-width"] = attr.borderWidth;
-	style.fill = attr.bgColor || "none";
-	style.stroke = attr.borderColor || "none";
-	style.position = "absolute";
+	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	var style = path.style;
+	style.fill = fill.color;
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = borderStyle.borderWidth;
 	
 	svg.appendChild(path);
 }
@@ -1601,24 +1673,24 @@ ShapeNode.hexagonShape = function(svg, shape, attr) {
  * @param {String} attr - other information essential to this function
  */
 ShapeNode.triangleShape = function(svg, shape, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"), style = null;
-	var width = attr.width;
-	var height = attr.height;
-	var halfWidth = width/2;
-	var d = "";
-	d += "M "+halfWidth+" 0";
-	d += " L "+width+" "+height;
-	d += " L 0 "+height;
-	d += " L "+halfWidth+" 0 Z";
-	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(attr.borderStyle, attr.borderWidth));
+	var geometry = attr.geometry || attr;
+	var fill = attr.fill || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w2 = w/2;
+	var h = geometry.height;
 	
-	style = path.style;
-	style.left = "1px";
-	style["stroke-width"] = attr.borderWidth;
-	style.fill = attr.bgColor || "none";
-	style.stroke = attr.borderColor || "none";
-	style.position = "absolute";
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M "+(w2)+" 0";
+	d += " L "+(w)+" "+(h);
+	d += " L 0 "+(h);
+	d += " L "+(w2)+" 0 Z";
+	path.setAttributeNS(null, "d", d);
+	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	var style = path.style;
+	style.fill = fill.color;
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = borderStyle.borderWidth;
 	
 	svg.appendChild(path);
 }
@@ -1632,34 +1704,38 @@ ShapeNode.triangleShape = function(svg, shape, attr) {
  * @param {String} attr - other information essential to this function
  */
 ShapeNode.trapezoidShape = function(svg, shape, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"), style = null;
+	var geometry = attr.geometry || attr;
+	var fill = attr.fill || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w4 = w/4;
+	var h = geometry.height;
+
 	var width = attr.width;
 	var height = attr.height;
 	var fourthWidth = width/4;
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	var d = "";
 	if(shape.search("2") == -1) {
-		d += "M "+fourthWidth+" 0";
-		d += " L "+(width - fourthWidth)+" 0";
-		d += " L "+width+" "+height;
+		d += "M "+(w4)+" 0";
+		d += " L "+(w - w4)+" 0";
+		d += " L "+(w)+" "+height;
 		d += " L 0 "+height;
-		d += " L "+fourthWidth+" 0 Z";
+		d += " L "+(w4)+" 0 Z";
 	}
 	else {
 		d += "M 0 0";
-		d += " L "+width+" 0";
-		d += " L "+(width - fourthWidth)+" "+height;
-		d += " L "+fourthWidth+" "+height;
+		d += " L "+(w)+" 0";
+		d += " L "+(w - w4)+" "+height;
+		d += " L "+(w4)+" "+height;
 		d += " L 0 0 Z";
 	}
 	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(attr.borderStyle, attr.borderWidth));
-	
-	style = path.style;
-	style.left = "1px";
-	style["stroke-width"] = attr.borderWidth;
-	style.fill = attr.bgColor || "none";
-	style.stroke = attr.borderColor || "none";
-	style.position = "absolute";
+	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	var style = path.style;
+	style.fill = fill.color;
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = borderStyle.borderWidth;
 	
 	svg.appendChild(path);
 }
@@ -1673,32 +1749,29 @@ ShapeNode.trapezoidShape = function(svg, shape, attr) {
  * @param {String} attr - other information essential to this function
  */
 ShapeNode.octagonShape = function(svg, shape, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"), style = null;
-	var width = attr.width;
-	var height = attr.height;
-	var thirdWidth = width/3;
-	var twoThirdWidth = 2 * thirdWidth;
-	var thirdHeight = height/3;
-	var twoThirdHeight = 2 * thirdHeight;
-	var d = "";
-	d += "M "+thirdWidth+" 0";
-	d += " L "+twoThirdWidth+" 0";
-	d += " L "+width+" "+thirdHeight;
-	d += " L "+width+" "+twoThirdHeight;
-	d += " L "+twoThirdWidth+" "+height;
-	d += " L "+thirdWidth+" "+height;
-	d += " L 0 "+twoThirdHeight;
-	d += " L 0 "+thirdHeight;
-	d += " L "+thirdWidth+" 0 Z";
-	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(attr.borderStyle, attr.borderWidth));
+	var geometry = attr.geometry || attr;
+	var fill = attr.fill || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w3 = w/3, w23 = 2*w3;
+	var h = geometry.height, h3 = h/3, h23 = 2*h3;
 	
-	style = path.style;
-	style.left = "1px";
-	style["stroke-width"] = attr.borderWidth;
-	style.fill = attr.bgColor || "none";
-	style.stroke = attr.borderColor || "none";
-	style.position = "absolute";
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"); // TODO: look at the octagon code in GenericNode
+	var d = "";
+	d += "M "+(w3)+" 0";
+	d += " L "+(w23)+" 0";
+	d += " L "+(w)+" "+(h3);
+	d += " L "+(w)+" "+(h23);
+	d += " L "+(w23)+" "+(h);
+	d += " L "+(w3)+" "+(h);
+	d += " L 0 "+(h23);
+	d += " L 0 "+(h3);
+	d += " L "+(w3)+" 0 Z";
+	path.setAttributeNS(null, "d", d);
+	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	var style = path.style;
+	style.fill = fill.color;
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = borderStyle.borderWidth;
 	
 	svg.appendChild(path);
 }
@@ -1712,26 +1785,25 @@ ShapeNode.octagonShape = function(svg, shape, attr) {
  * @param {String} attr - other information essential to this function
  */
 ShapeNode.diamondShape = function(svg, shape, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"), style = null;
-	var width = attr.width;
-	var height = attr.height;
-	var halfWidth = width/2;
-	var halfHeight = height/2;
-	var d = "";
-	d += "M "+halfWidth+" 0";
-	d += " L "+width+" "+halfHeight;
-	d += " L "+halfWidth+" "+height;
-	d += " L 0 "+halfHeight;
-	d += " L "+halfWidth+" 0 Z";
-	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(attr.borderStyle, attr.borderWidth));
+	var geometry = attr.geometry || attr;
+	var fill = attr.fill || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w2 = w/2;
+	var h = geometry.height, h2 = h/2;
 	
-	style = path.style;
-	style.left = "1px";
-	style["stroke-width"] = attr.borderWidth;
-	style.fill = attr.bgColor || "none";
-	style.stroke = attr.borderColor || "none";
-	style.position = "absolute";
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M "+(w2)+" 0";
+	d += " L "+(w)+" "+(h2);
+	d += " L "+(w2)+" "+(h);
+	d += " L 0 "+(h2);
+	d += " L "+(w2)+" 0 Z";
+	path.setAttributeNS(null, "d", d);
+	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	var style = path.style;
+	style.fill = fill.color;
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = borderStyle.borderWidth;
 	
 	svg.appendChild(path);
 }
@@ -1743,10 +1815,10 @@ ShapeNode.diamondShape = function(svg, shape, attr) {
  * Generic shapes encompass a variety of form and logic entities.
  * @override
  */
-GenericNode.prototype = new Representation();
+GenericNode.prototype = new yWorksRepresentation();
 GenericNode.prototype.constructor = GenericNode;
 function GenericNode(id, attributes) {
-	Representation.call(this, id,attributes);
+	yWorksRepresentation.call(this, id,attributes);
 }
 
 /**
@@ -1757,7 +1829,7 @@ GenericNode.prototype.readXML = function(xml) {
 	var attributes = {};
 	
 	attributes.id = xml.getAttribute("id");
-	yWorks.getBasicGeometry(attributes, xml);
+	yWorks.getCommonFields(attributes, xml);
 	yWorks.getStyleProperties(attributes, xml);
 	yWorks.getLabels(attributes, xml);
 	
@@ -1944,7 +2016,7 @@ GenericNode.createConfiguration = function(configuration, attributes) {
  * @returns {SVGElement} the container of the SVG data
  */
 GenericNode.createArtifact = function(svg, configuration, attr) {
-	var type = attr.style && attr.style["com.yworks.bpmn.type"];
+	var type = attr.styleProperties && attr.styleProperties["com.yworks.bpmn.type"];
 	switch(type) {
 		case "ARTIFACT_TYPE_DATA_OBJECT":
 			GenericNode.createArtifactDataObject(svg, type, attr);
@@ -1980,11 +2052,11 @@ GenericNode.createGatewayDetails = function(svg, attr) {
 	var style = null, dashed = null;
 	var svgns = "http://www.w3.org/2000/svg";
 	
-	var color1 = attr.style["com.yworks.bpmn.icon.fill"], color2 = attr.style["com.yworks.bpmn.icon.fill2"];
+	var color1 = attr.styleProperties["com.yworks.bpmn.icon.fill"], color2 = attr.styleProperties["com.yworks.bpmn.icon.fill2"];
 	var borderWidth = attr.borderWidth;
-	var bdColor = attr.style["com.yworks.bpmn.icon.line.color"];
+	var bdColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"];
 	var bgColor = yWorks.setupLinearGradient(svg, {id:this.id+"_detail_gradient", x2:1, y2:1, width:attr.width, height:attr.height, color1:color1, color2:color2}).color;
-	var type = attr.style["com.yworks.bpmn.type"];
+	var type = attr.styleProperties["com.yworks.bpmn.type"];
 	var boldLineWidth = 0.056 * len;
 	switch(type) {
 		case "GATEWAY_TYPE_PLAIN": // Nothing
@@ -2146,7 +2218,7 @@ GenericNode.createEventDetails = function(svg, attr) {
 	var svgns = "http://www.w3.org/2000/svg";
 	var borderColor = attr.borderColor;
 	
-	var type1 = attr.style["com.yworks.bpmn.characteristic"]; // Outline design
+	var type1 = attr.styleProperties["com.yworks.bpmn.characteristic"]; // Outline design
 	switch(type1) {
 		case "EVENT_CHARACTERISTIC_START_EVENT_SUB_PROCESS_NON_INTERRUPTING": // Single outline, dashed
 			dashed = yWorks.createSVGLinePattern("dashed", 1);
@@ -2216,16 +2288,16 @@ GenericNode.createEventDetails = function(svg, attr) {
 			console.log("No graphics for "+this.id+" characteristic - '"+type1+"'");
 	}
 	
-	var color1 = attr.style["com.yworks.bpmn.icon.fill"], color2 = attr.style["com.yworks.bpmn.icon.fill2"];
+	var color1 = attr.styleProperties["com.yworks.bpmn.icon.fill"], color2 = attr.styleProperties["com.yworks.bpmn.icon.fill2"];
 	var borderWidth = attr.borderWidth;
-	var bdColor = attr.style["com.yworks.bpmn.icon.line.color"];
+	var bdColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"];
 	var detailColor = bdColor;
 	var bgColor = yWorks.setupLinearGradient(svg, {id:this.id+"_detail_gradient", x2:1, y2:1, width:attr.width, height:attr.height, color1:color1, color2:color2}).color;
 	if(type1 == "EVENT_CHARACTERISTIC_INTERMEDIATE_THROWING" || type1 == "EVENT_CHARACTERISTIC_END") {
 		bgColor = "black";
 		detailColor = "white";
 	}
-	var type2 = attr.style["com.yworks.bpmn.type"]; // Central emblem
+	var type2 = attr.styleProperties["com.yworks.bpmn.type"]; // Central emblem
 	switch(type2) {
 		case "EVENT_TYPE_PLAIN": // Nothing
 			break;
@@ -3202,7 +3274,7 @@ GenericNode.createEntityAttribute = function(svg, configuration, attr) {
 	style.stroke = attr.borderColor;
 	svg.appendChild(ellipse);
 	
-	if(attr.style["doubleBorder"] && rx > 8 && ry > 8) {
+	if(attr.styleProperties["doubleBorder"] && rx > 8 && ry > 8) {
 		ellipse = document.createElementNS(svgns, "ellipse"), style = null;
 		ellipse.setAttributeNS(null, "rx", rx - 3);
 		ellipse.setAttributeNS(null, "ry", ry - 3);
@@ -3240,7 +3312,7 @@ GenericNode.createEntitySmall = function(svg, configuration, attr) {
 	style.stroke = attr.borderColor;
 	svg.appendChild(rect);
 	
-	if(attr.style["doubleBorder"] && w > 8 && h > 8) {
+	if(attr.styleProperties["doubleBorder"] && w > 8 && h > 8) {
 		rect = document.createElementNS(svgns, "rect");
 		rect.setAttributeNS(null, "x", 3);
 		rect.setAttributeNS(null, "y", 3);
@@ -3335,7 +3407,7 @@ GenericNode.createEntityRelationship = function(svg, configuration, attr) {
 	style.stroke = attr.borderColor;
 	svg.appendChild(path);
 	
-	if(attr.style["doubleBorder"] && w > 8 && h > 8) {
+	if(attr.styleProperties["doubleBorder"] && w > 8 && h > 8) {
 		path = document.createElementNS(svgns, "path");
 		d = "";
 		d = "M "+w2+" 4";
@@ -3461,8 +3533,8 @@ GenericNode.createConversation = function(svg, configuration, attr) {
 GenericNode.createArtifactDataObject = function(svg, type, attr) {
 	var w = attr.width;
 	var h = attr.height;
-	var spec = attr.style["com.yworks.bpmn.dataObjectType"];
-	var collection = attr.style["com.yworks.bpmn.marker1"];
+	var spec = attr.styleProperties["com.yworks.bpmn.dataObjectType"];
+	var collection = attr.styleProperties["com.yworks.bpmn.marker1"];
 	if(spec.search(/(IN|OUT)PUT/i) != -1) { // Spec ..._PLAIN can scale forever
 		var maxh = (collection == "BPMN_MARKER_PARALLEL" ? 37 : 21);
 		w = Math.max(w, 32);
@@ -3511,7 +3583,7 @@ GenericNode.createArtifactDataObject = function(svg, type, attr) {
 	svg.appendChild(path);
 	
 	if(spec.search(/(IN|OUT)PUT/i) != -1) { // Spec ..._PLAIN does not have an arrow
-		var iconLineColor = attr.style["com.yworks.bpmn.icon.line.color"];
+		var iconLineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"];
 		
 		path = document.createElementNS(svgns, "path");
 		d = "";
@@ -3526,8 +3598,8 @@ GenericNode.createArtifactDataObject = function(svg, type, attr) {
 		path.setAttributeNS(null, "d", d);
 		style = path.style;
 		if(spec.search("INPUT") != -1) {
-			var iconFill1 = attr.style["com.yworks.bpmn.icon.fill"];
-			var iconFill2 = attr.style["com.yworks.bpmn.icon.fill2"];
+			var iconFill1 = attr.styleProperties["com.yworks.bpmn.icon.fill"];
+			var iconFill2 = attr.styleProperties["com.yworks.bpmn.icon.fill2"];
 			ret = yWorks.setupLinearGradient(svg, {id:attr.id+"_icon_gradient", x2:1, y2:1, width:w, height:h, color1:iconFill1, color2:iconFill2});
 			style.fill = ret.color;
 		}
@@ -3851,17 +3923,15 @@ GenericNode.createBevel = function(svg, configuration, attr) {
 
 /**
  * The representation of a special element with a visual component that is stored as SVG data.
- * They appears to comprise a group of computer-related items.
+ * They appears to comprise a group of computer-related visual elements, some heads, and a stick figure.
  * @override
- * @property {String} refid - an associative id that refers to the SVG data to create the element
- * @property {SVG} ref - when the SVG data is allocated to the appropriate element (this one), it is stored here
  */
-SVGNode.prototype = new Representation();
+SVGNode.prototype = new yWorksRepresentation();
 SVGNode.prototype.constructor = SVGNode;
 function SVGNode(id, attributes) {
 	this.refid = null;
-	this.ref = null;
-	Representation.call(this, id,attributes);
+	this.resource = null;
+	yWorksRepresentation.call(this, id,attributes);
 }
 
 /**
@@ -3869,7 +3939,7 @@ function SVGNode(id, attributes) {
  * @returns {String} the identifier corresponding to a resource entry from the original graphml data
  */
 SVGNode.prototype.getRefid = function() {
-	return this.refid;
+	return this.data.refid;
 }
 
 /**
@@ -3878,7 +3948,7 @@ SVGNode.prototype.getRefid = function() {
  * @returns {Boolean} always returns true
  */
 SVGNode.prototype.setRefid = function(id) {
-	this.refid = id;
+	this.data.refid = id;
 	return true;
 }
 
@@ -3887,16 +3957,16 @@ SVGNode.prototype.setRefid = function(id) {
  * @returns {SVG} the corresponding resource entry from the original graphml data
  */
 SVGNode.prototype.getRef = function() {
-	return this.ref;
+	return this.data.resource;
 }
 
 /**
  * Set the resource.
- * @param {SVG} ref - the corresponding resource entry from the original graphml data
+ * @param {SVG} res - the corresponding resource entry from the original graphml data
  * @returns {Boolean} always returns true
  */
-SVGNode.prototype.setRef = function(ref) {
-	this.ref = ref;
+SVGNode.prototype.setRef = function(res) {
+	this.data.resource = res;
 	return true;
 }
 
@@ -3908,11 +3978,14 @@ SVGNode.prototype.readXML = function(xml) {
 	var attributes = {};
 	
 	attributes.id = xml.getAttribute("id");
-	yWorks.getBasicGeometry(attributes, xml);
+	yWorks.getCommonFields(attributes, xml);
 	
 	var g = xml.getElementsByTagName("y:SVGModel")[0];
+	attributes.svgBoundsPolicy = g.getAttribute("svgBoundsPolicy");
+	
 	g = g && g.getElementsByTagName("y:SVGContent")[0];
-	this.refid = g && g.getAttribute("refid");
+	attributes.refid = g && g.getAttribute("refid");
+	attributes.resource = null;
 	
 	return attributes;
 }
@@ -3922,114 +3995,67 @@ SVGNode.prototype.readXML = function(xml) {
  * @override
  */
 SVGNode.prototype.createElement = function(attr) {
-	var cattr = attr || this.data || {};
-	var bgx = cattr.x, bgy = cattr.y, bgw = cattr.width, bgh = cattr.height;
+	attr = attr || this.data || {};
+	var geometry = attr.geometry || attr;
 	
-	// svg frame
 	var containerNode = Representation.prototype.createElement.call(this, attr);
-	var contentNode = null, style = null;
-	containerNode.className = "yWorks svg frame";
-	style = containerNode.style;
-	style.left = bgx+"px";
-	style.top = bgy+"px";
-	style.width = bgw+"px";
-	style.height = bgh+"px";
+	containerNode.className = "yWorks svg";
 	
-	var svg = this.reconstructSVGResourceData(cattr);
-	containerNode.appendChild(svg);
+	var contentNode = document.createElement("div");
+	contentNode.className = "yWorks svg frame";
+	var style = contentNode.style;
+	style.left = geometry.x+"px";
+	style.top = geometry.y+"px";
+	style.width = geometry.width+"px";
+	style.height = geometry.height+"px";
+	
+	contentNode.appendChild( SVGNode.reconstructSVGResourceData(attr) );
+	containerNode.appendChild(contentNode);
 	return containerNode;
 }
 
 /**
  * Re-parse the DOM structure associated with the particular resource of this SVGNode element to compose an image.
  * Rather than the exhaustive constructors of the GenericNode elements, SVGNodes have their SVG included at the end of the markup source source.
- * The setup routines for this namespac extract and pair the data with the element.
+ * The setup routines for this namespace extract and pair the data with the element.
  * @param {Object} attr - an optional reference that would contain data important to the reconstruction of the svg element
- * @returns {SVGElement} an element that reconstructs the svg element
+ * @returns {SVGElement} an element that contains the svg element
  */
-SVGNode.prototype.reconstructSVGResourceData = function(attr) {
+SVGNode.reconstructSVGResourceData = function(attr) {
 	/*
 	The basic svg-type data for this namespace's file type stored at the end of the main graphml file.
 	It is filled with its own foreign namespace data, for example, inkscape and sodipodi.
 	Fortunately, the DOMParser can transform most of the important data into a proper tree structure that can be explored.
 	*/
-	var svgns = "http://www.w3.org/2000/svg";
-	var cattr = attr || this.data || {};
-	var svg = document.createElementNS(svgns, "svg"); // Placeholder
-	svg.setAttributeNS(null, "width", cattr.width);
-	svg.setAttributeNS(null, "height", cattr.height);
+	var geometry = attr.geometry || attr;
+	var id = attr.id;
+	var refid = attr.refid;
+	var resource = attr.resource;
+	var resourceDOM = null;
 	
-	var id = this.id, resource = this.ref, resourceDOM = null;
+	var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); // Placeholder
 	if(!resource) {
-		console.log("Element "+id+": missing resource '"+this.refid+"'");
+		console.log("Element "+id+": missing resource '"+refid+"'");
 		return svg;
 	}
 	try {
 		resourceDOM  = new DOMParser().parseFromString(resource, "text/xml");
 	}
 	catch(err) {
-		console.log("Element "+id+": could not parse resource string '"+this.refid+"' into a DOM structure - "+err.message);
+		console.log("Element "+id+": could not parse resource string '"+refid+"' into a DOM structure - "+err.message);
 		return svg;
 	}
-	var header = resourceDOM.getElementsByTagName("svg")[0];
+	
+	var header = resourceDOM.getElementsByTagName("svg")[0]; // Caution: SVGElements can contain valid SVGElements
 	if(!header) {
 		console.log("Element "+id+": can not find (root of) vector graph data in parsed DOM structure");
 		return svg;
 	}
-	
+	svg.setAttributeNS(null, "width", geometry.width);
+	svg.setAttributeNS(null, "height", geometry.height);
 	header.parentNode.removeChild(header);
 	svg = header;
 	SVGNode.propagateUniqueID(svg, id);
-	
-	// TODO - The code below would be useful for a more gradual element testing methodology.  For now, rely on reference swapping.
-/*	var namespaces = { // Defaults
-		"xml":"http://www.w3.org/XML/1998/namespace",
-		"xmlns":"http://www.w3.org/2000/xmlns/"
-	};
-	for(var i = 0, attributes = header.attributes, j = attributes.length; i < j; i++) { // Copy the attributes from the root SVG element
-		var attribute = attributes[i];
-		var nodeName = attribute.nodeName;
-		var nodeValue = attribute.nodeValue;
-		var ns = null;
-		if(nodeName.search(":") != -1) { // Reference/update recognized local namespaces for attribute imports
-			var nspace = nodeName.split(":");
-			if(nspace[0] == "xmlns")
-				namespaces[nspace[1]] = nodeValue;
-			ns = namespaces[nspace[0]];
-			if(!ns) {
-				console.log("Element "+id+": stopped an unknown namespace from setting data - "+nodeName+"="+nodeValue);
-				continue;
-			}
-		}
-		else if(nodeName == "xmlns") // This is also a special case
-			continue;
-		try {
-			svg.setAttributeNS(ns, nodeName, nodeValue);
-		}
-		catch(err) {
-			console.log("Element "+id+": caught a namespace violation - "+nodeName+"="+nodeValue);
-		}
-	}
-	
-	OuterLoop:
-	while(header.firstChild) {
-		var elem;
-		try {
-			while(header.firstChild) {
-				elem = header.firstChild;
-				svg.appendChild(elem);
-				elem = null;
-			}
-			break OuterLoop; // We're done.
-		}
-		catch(err) {
-			var nodeName = elem ? (elem.tagName && elem.tagName.toLowerCase()) || (elem.nodeName && elem.nodeName.toLowerCase()) : "node";
-			console.log("Element "+id+": failed when working with a "+nodeName+" ("+err.message+")");
-			if(elem && elem.parentNode == header)
-				elem.parentNode.removeChild(elem); // Do not revisit the node that caused this issue
-			elem = null;
-		}
-	}*/
 	return svg;
 }
 
@@ -4074,10 +4100,67 @@ SVGNode.propagateUniqueID = function(svg, uid) {
 /**
  * na
  */
-ProxyAutoBoundsNode.prototype = new Representation();
+ProxyAutoBoundsNode.prototype = new yWorksRepresentation();
 ProxyAutoBoundsNode.prototype.constructor = ProxyAutoBoundsNode;
 function ProxyAutoBoundsNode(id, attributes) {
-	Representation.call(this, id,attributes);
+	yWorksRepresentation.call(this, id,attributes);
+}
+
+/**
+ * Get the two-dimensional coordinates and span that explains the canvas-space this element should occupy.
+ * @override
+ */
+ProxyAutoBoundsNode.prototype.getBounds = function() {
+	var attr = this.data;
+	var group = attr.groups[attr.active];
+	var obj = {};
+	if(!group) { // TODO: unwarranted failsafe
+		obj.x = 0;
+		obj.y = 0;
+		obj.width = 0;
+		obj.height = 0;
+	}
+	else {
+		obj.x = group.x;
+		obj.y = group.y;
+		obj.width = group.width;
+		obj.height = group.height;
+	}
+	return obj;
+}
+
+/**
+ * Provide updated two-dimensional coordinates and span for this element.
+ * @override
+ */
+ProxyAutoBoundsNode.prototype.setBounds = function(bounds, increment) {
+	var groups = this.data.groups;
+	if(increment) {
+		for(var i = 0, j = groups.length; i < j; i++) {
+			var group = groups[i];
+			if("x" in bounds)
+				group.x += bounds.x;
+			if("y" in bounds)
+				group.y += bounds.y;
+			if("width" in bounds)
+				group.width += bounds.width;
+			if("height" in bounds)
+				group.height += bounds.height;
+		}
+	}
+	else {
+		for(var i = 0, j = groups.length; i < j; i++) {
+			var group = groups[i];
+			if("x" in bounds)
+				group.x = bounds.x;
+			if("y" in bounds)
+				group.y = bounds.y;
+			if("width" in bounds)
+				group.width = bounds.width;
+			if("height" in bounds)
+				group.height = bounds.height;
+		}
+	}
 }
 
 /**
@@ -4099,7 +4182,7 @@ ProxyAutoBoundsNode.prototype.readXML = function(xml) {
 	for(var i = 0, j = gElems.length; i < j; i++) {
 		var group = {};
 		var gi = gElems[i];
-		yWorks.getBasicGeometry(group, gi);
+		yWorks.getCommonFields(group, gi);
 		yWorks.getLabels(group, gi);
 		
 		var section = gi.getElementsByTagName("y:Shape")[0], field = null;
@@ -4168,7 +4251,7 @@ ProxyAutoBoundsNode.prototype.createElement = function(attr) {
 		style.height = group.height+"px";
 		if(i != active)
 			style.visibility = "hidden";
-		contentNode.appendChild( ShapeNode.createShape(group.shape, group) ); // One part of the proxy auto-bounds is a shape like ShapeNode
+		contentNode.appendChild( ShapeNode.switchShape(group.shape, group) ); // One part of the proxy auto-bounds is a shape like ShapeNode
 		containerNode.appendChild(contentNode);
 	}
 	
@@ -4182,10 +4265,10 @@ ProxyAutoBoundsNode.prototype.createElement = function(attr) {
  * They also have complex curves (not currently supported).
  * @override
  */
-PolyLineEdge.prototype = new Representation();
+PolyLineEdge.prototype = new yWorksRepresentation();
 PolyLineEdge.prototype.constructor = PolyLineEdge;
 function PolyLineEdge(id, attributes) {
-	Representation.call(this, id,attributes);
+	yWorksRepresentation.call(this, id,attributes);
 }
 
 /**
@@ -4194,42 +4277,42 @@ function PolyLineEdge(id, attributes) {
  */
 PolyLineEdge.prototype.readXML = function(xml) {
 	var attributes = {};
-	var source = {};
-	source.id = attributes.source;
-	attributes.source = source;
-	var target = {};
-	source.id = attributes.target;
-	attributes.target = target;
-	
 	attributes.id = xml.getAttribute("id");
-	source.id = xml.getAttribute("source");
-	target.id = xml.getAttribute("target");
-	var g;
+	attributes.src = xml.getAttribute("source"); // TODO: rename this later
+	attributes.tgt = xml.getAttribute("target"); // TODO: rename this later
+	
+	var g = null, field = null;
 	g = xml.getElementsByTagName("y:Path")[0];
-	source.dx = +g.getAttribute("sx");
-	source.dy = +g.getAttribute("sy");
-	target.dx = +g.getAttribute("tx");
-	target.dy = +g.getAttribute("ty");
-	g = xml.getElementsByTagName("y:Point");
-	// We may have a number of intermediate points
-	var px = attributes.px = [];
-	var py = attributes.py = [];
+	field = attributes.path = {};
+	field.sx = +g.getAttribute("sx");
+	field.sy = +g.getAttribute("sy");
+	field.tx = +g.getAttribute("tx");
+	field.ty = +g.getAttribute("ty");
+	
+	g = xml.getElementsByTagName("y:Point"); // We may have a number of intermediate points
+	field = attributes.points = [];
 	for(var i = 0, j = g.length; i < j; i++) {
 		var point = g[i];
-		px.push(+point.getAttribute("x"));
-		py.push(+point.getAttribute("y"));
+		field.push(
+			{x:+point.getAttribute("x"),
+			 y:+point.getAttribute("y")}
+		);
 	}
 	
 	g = xml.getElementsByTagName("y:LineStyle")[0];
-	attributes.stroke = g.getAttribute("color");
-	attributes.type = g.getAttribute("type");
-	attributes.strokeWidth = g.getAttribute("width");
-	g = xml.getElementsByTagName("y:Arrows")[0];
-	source.arrow = g.getAttribute("source");
-	target.arrow = g.getAttribute("target");
-	g = xml.getElementsByTagName("y:BendStyle")[0];
-	attributes.smoothed = g.getAttribute("smoothed") == "true";
+	field = attributes.lineStyle = {};
+	field.color = attributes.stroke = g.getAttribute("color");
+	field.type = attributes.type = g.getAttribute("type");
+	field.width = attributes.strokeWidth = g.getAttribute("width");
 	
+	g = xml.getElementsByTagName("y:Arrows")[0];
+	field = attributes.arrows = {};
+	field.source = g.getAttribute("source");
+	field.target = g.getAttribute("target");
+	
+	g = xml.getElementsByTagName("y:BendStyle")[0];
+	field = attributes.bendStyle = {};
+	field.smoothed = g.getAttribute("smoothed") == "true";
 	return attributes;
 }
 
@@ -4239,13 +4322,15 @@ PolyLineEdge.prototype.readXML = function(xml) {
  */
 PolyLineEdge.prototype.createElement = function(attr) {
 	attr = attr || this.data;
-	var source = attr.source;
-	var target = attr.target;
-	if(!attr || !source || !target)
+	if(!attr || !attr.src || !attr.tgt)
 		throw new Error("An unknown edge was trying to be drawn.");
-	var stroke = attr.stroke;
-	var strokeWidth = +attr.strokeWidth;
-	var svgns = "http://www.w3.org/2000/svg";
+	
+	var geometry = attr.geometry || attr;
+	var lineStyle = attr.lineStyle;
+	var stroke = lineStyle.color;
+	var strokeWidth = lineStyle.width;
+	var strokeStyle = lineStyle.type;
+	var dash = yWorks.createSVGLinePattern(lineStyle.type, strokeWidth);
 	
 	var containerNode = Representation.prototype.createElement.call(this, attr), style = null;
 	containerNode.className = "yWorks line"
@@ -4254,23 +4339,20 @@ PolyLineEdge.prototype.createElement = function(attr) {
 	contentNode.id = attr.id+"-shape";
 	contentNode.class = "yWorks line frame";
 	style = contentNode.style;
-//	style.left = attr.x+"px";
-//	style.top = attr.y+"px";
-	style.width = attr.width+"px";
-	style.height = attr.height+"px";
+//	style.left = geometry.x+"px";
+//	style.top = geometry.y+"px";
+	style.width = geometry.width+"px";
+	style.height = geometry.height+"px";
 	containerNode.appendChild(contentNode);
 	
-	var svg = document.createElementNS(svgns, "svg");
-	svg.setAttributeNS(null, "width", +attr.width + 13); // Add extra to make certain the line is properly enclosed
-	svg.setAttributeNS(null, "height", +attr.height + 13);
+	var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	svg.setAttributeNS(null, "width", geometry.width + 13); // Add extra to make certain the line is properly enclosed
+	svg.setAttributeNS(null, "height", geometry.height + 13);
 	contentNode.appendChild(svg);
 	
-	var dList = yWorks.createSVGLinePattern(attr.type);
-	var style = {fill:"none", stroke:stroke};
+	style = {fill:"none", stroke:stroke};
 	style["stroke-width"] = strokeWidth;
-	PolyLineEdge.chainedLine(svg, attr, style, dList);
-	//PolyLineEdge.pathLine(svg, attr, style, dList);
-	
+	PolyLineEdge.chainOfLines(svg, attr, style, dash);
 	PolyLineEdge.arrowHead(svg, "source", attr);	
 	PolyLineEdge.arrowHead(svg, "target", attr);
 	
@@ -4286,73 +4368,43 @@ PolyLineEdge.prototype.createElement = function(attr) {
  * @param {Object} dtyle - information pertinent to this edge's css
  * @param {String} dashed - the formatted string that explains how the line is stylized, if at all
  */
-PolyLineEdge.chainedLine = function(svg, attr, dstyle, dashed) {
+PolyLineEdge.chainOfLines = function(svg, attr, dstyle, dashed) {
+	var points = attr.points;
+	var endpoints = attr.endpoints;
+	var x = endpoints.source.x, y = endpoints.source.y;
+	var id = attr.id;
+	
 	var svgns = "http://www.w3.org/2000/svg";
-	var source = attr.source, target = attr.target;
-	var px = attr.px, py = attr.py;
-	var ax = source.x, ay = source.y, bx, by;
-	var line, style;
-	if(px.length) {
-		for(var i = 0, j = px.length; i < j; i++) {
-			bx = px[i];
-			by = py[i];
-			line = document.createElementNS(svgns, "line");
-			line.setAttributeNS(null, "x1", ax);
-			line.setAttributeNS(null, "y1", ay);
-			line.setAttributeNS(null, "x2", bx);
-			line.setAttributeNS(null, "y2", by);
-			style = line.style;
-			style.fill = dstyle.fill;
-			style.stroke = dstyle.stroke;
-			style["stroke-width"] = dstyle["stroke-width"];
-			if(dashed)
-				line.setAttributeNS(null, "stroke-dasharray", dashed);
-			svg.appendChild(line);
-			ax = bx;
-			ay = by;
-		}
+	var line, style, i = 0;
+	for(var j = points.length; i < j; i++) {
+		var point = points[i];
+		line = document.createElementNS(svgns, "line");
+		line.id = id+"-segment-"+i;
+		line.setAttributeNS(null, "x1", x);
+		line.setAttributeNS(null, "y1", y);
+		line.setAttributeNS(null, "x2", point.x);
+		line.setAttributeNS(null, "y2", point.y);
+		style = line.style;
+		style.fill = dstyle.fill;
+		style.stroke = dstyle.stroke;
+		style["stroke-width"] = dstyle["stroke-width"];
+		line.setAttributeNS(null, "stroke-dasharray", dashed);
+		svg.appendChild(line);
+		x = point.x;
+		y = point.y;
 	}
 	line = document.createElementNS(svgns, "line");
-	line.setAttributeNS(null, "x1", ax);
-	line.setAttributeNS(null, "y1", ay);
-	line.setAttributeNS(null, "x2", target.x);
-	line.setAttributeNS(null, "y2", target.y);
+	line.id = id+"-segment-"+i;
+	line.setAttributeNS(null, "x1", x);
+	line.setAttributeNS(null, "y1", y);
+	line.setAttributeNS(null, "x2", endpoints.target.x);
+	line.setAttributeNS(null, "y2", endpoints.target.y);
 	style = line.style;
 	style.fill = dstyle.fill;
 	style.stroke = dstyle.stroke;
 	style["stroke-width"] = dstyle["stroke-width"];
-	if(dashed)
-		line.setAttributeNS(null, "stroke-dasharray", dashed);
+	line.setAttributeNS(null, "stroke-dasharray", dashed);
 	svg.appendChild(line);
-}
-
-/**
- * Construct this edge out of a single SVG path element.
- * @private
- * @static
- * @param {SVGElement} svg - the container for this drawing
- * @param {Object} attr - information pertinent to the entirety of the edge
- * @param {Object} dtyle - information pertinent to this edge's css
- * @param {String} dashed - the formatted string that explains how the line is stylized, if at all
- */
-PolyLineEdge.pathLine = function(svg, attr, dstyle, dashed) {
-	var source = attr.source, target = attr.target;
-	var sList = "", xList = attr.px, yList = attr.py, len = xList.length;
-	
-	var polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-	sList += source.x +" "+ source.y +" ";
-	for(var i = 0; i < len; i++) {
-		sList += xList[i] +","+ yList[i] +" ";
-	}
-	sList += target.x +" "+ target.y +" ";
-	polyline.setAttributeNS(null, "points", sList);
-	var style = polyline.style;
-	style.fill = dstyle.fill;
-	style.stroke = dstyle.stroke;
-	style["stroke-width"] = dstyle["stroke-width"];
-	if(dashed)
-		polyline.setAttributeNS(null, "stroke-dasharray", dashed);
-	svg.appendChild(polyline);
 }
 
 /**
@@ -4360,32 +4412,49 @@ PolyLineEdge.pathLine = function(svg, attr, dstyle, dashed) {
  * All endpoints are drawn facing rightwards and then must be rotated around the tip to align with the line segment to which they coincide.
  * @private
  * @static
+ * @param {SVGElement} svg - the container for this drawing
  * @param {String} side - either "source" or "target," indicating one end of the edge or the other
  * @param {Object} attributes - information pertinent to the entirety of the edge
  */
 PolyLineEdge.arrowHead = function(svg, side, attributes) {
-	var svgid = attributes.id+"-"+side+"-arrow";
-	var px = attributes.px, py = attributes.py;
-	var anglex, angleY, angle = 0;
-	var sideAttr = attributes[side];
-	var arrowType = "none";
-	
 	// Which side?
+	var points = attributes.points;
+	var sideAttr = attributes.endpoints[side];
+	var angleX = sideAttr.x;
+	var angleY = sideAttr.y;
 	if(side == "source") {
-		angleX = sideAttr.x - (px[0] || attributes.target.x);
-		angleY = sideAttr.y - (py[0] || attributes.target.y);
+		var point = points[0];
+		if(point) {
+			angleX -= point.x;
+			angleY -= point.y;
+		}
+		else {
+			angleX -= attributes.endpoints.target.x;
+			angleY -= attributes.endpoints.target.y;
+		}
 	}
 	else if(side == "target") {
-		var len1 = px.length-1;
-		angleX = sideAttr.x - (px[len1] || attributes.source.x);
-		angleY = sideAttr.y - (py[len1] || attributes.source.y);
+		var point = attributes.points[attributes.points.length-1];
+		if(point) {
+			angleX -= point.x;
+			angleY -= point.y;
+		}
+		else {
+			angleX -= attributes.endpoints.source.x;
+			angleY -= attributes.endpoints.source.y;
+		}
 	}
-	else
+	else // Error checking, in case side data was passed incorrectly
 		return;
-	arrowType = sideAttr.arrow || arrowType; // What the arrow type
+	
+	var arrowType = attributes.arrows[side];
 	if(arrowType == "none")
 		return;
+	
 	// Calculate the rotation transform
+	var left = sideAttr.x;
+	var top = sideAttr.y;
+	var angle = 0;
 	if(angleY == 0)
 		angle = angleX > 0 ? 0 : 180;
 	else if(angleX == 0)
@@ -4395,9 +4464,34 @@ PolyLineEdge.arrowHead = function(svg, side, attributes) {
 		if(angleX < 0)
 			angle += 180;
 	}
-	var left = sideAttr.x;
-	var top = sideAttr.y;
 	
+	
+//	if(side == "source") {
+//		angleX = sideAttr.x - (px[0] || attributes.target.x);
+//		angleY = sideAttr.y - (py[0] || attributes.target.y);
+//	}
+//	else if(side == "target") {
+//		var len1 = px.length-1;
+//		angleX = sideAttr.x - (px[len1] || attributes.source.x);
+//		angleY = sideAttr.y - (py[len1] || attributes.source.y);
+//	}
+//	else
+//		return;
+//	arrowType = sideAttr.arrow || arrowType; // What the arrow type
+//	if(arrowType == "none")
+//		return;
+	// Calculate the rotation transform
+//	if(angleY == 0)
+//		angle = angleX > 0 ? 0 : 180;
+//	else if(angleX == 0)
+//		angle = angleY > 0 ? 90 : -90;
+//	else {
+//		angle = Math.atan(angleY/angleX) * (180 / Math.PI);
+//		if(angleX < 0)
+//			angle += 180;
+//	}
+	
+	var svgid = attributes.id+"-"+side+"-arrow";
 	var attr = {};
 	attr.stroke = attributes.stroke;
 	attr.arrowType = arrowType;
@@ -4473,19 +4567,18 @@ PolyLineEdge.arrowHead = function(svg, side, attributes) {
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
 PolyLineEdge.deltaArrowHead = function(svg, id, left, top, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-	path.id = id;
 	left -= 15;
 	top -= 5;
 	
-	var pathList = "M "+(left)+" "+(top);
-	pathList += " L "+(left+15)+" "+(top+5);
-	pathList += " L "+(left)+" "+(top+10);
-	pathList += " L "+(left)+" "+(top);
-	pathList += " Z";
-	path.setAttributeNS(null, "d", pathList);
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.id = id;
+	var d = "";
+	d = "M "+(left)+" "+(top);
+	d += " L "+(left+15)+" "+(top+5);
+	d += " L "+(left)+" "+(top+10);
+	d += " L "+(left)+" "+(top)+" Z";
+	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "transform", attr.transform);
-	
 	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = attr.arrowType == "delta" ? attr.stroke : "white";
@@ -4508,19 +4601,18 @@ PolyLineEdge.deltaArrowHead = function(svg, id, left, top, attr) {
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
 PolyLineEdge.diamondArrowHead = function(svg, id, left, top, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-	path.id = id;
 	left -= 13;
 	
-	var pathList = "M "+(left)+" "+(top);
-	pathList += " L "+(left+6)+" "+(top-4);
-	pathList += " L "+(left+13)+" "+(top);
-	pathList += " L "+(left+6)+" "+(top+4);
-	pathList += " L "+(left)+" "+(top);
-	pathList += " Z";
-	path.setAttributeNS(null, "d", pathList);
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.id = id;
+	var d = "";
+	d = "M "+(left)+" "+(top);
+	d += " L "+(left+6)+" "+(top-4);
+	d += " L "+(left+13)+" "+(top);
+	d += " L "+(left+6)+" "+(top+4);
+	d += " L "+(left)+" "+(top)+" Z";
+	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "transform", attr.transform);
-	
 	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = attr.arrowType == "diamond" ? attr.stroke : "white";
@@ -4551,7 +4643,6 @@ PolyLineEdge.circleArrowHead = function(svg, id, left, top, attr) {
 	circle.setAttributeNS(null, "cy", top);
 	circle.setAttributeNS(null, "r", 4);
 	circle.setAttributeNS(null, "transform", attr.transform);
-	
 	var style = circle.style;
 	style["stroke-width"] = 1;
 	style.fill = attr.arrowType == "circle" ? attr.stroke : "none";
@@ -4574,23 +4665,23 @@ PolyLineEdge.circleArrowHead = function(svg, id, left, top, attr) {
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
 PolyLineEdge.curveArrowHead = function(svg, id, left, top, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-	path.id = id;
 	left -= 12;
 	top -= 6;
-	
 	var flex = attr.arrowType == "concave" ? [2,4,4,8] : [4,-2,8,12];
-	var pathList = "M "+(left)+" "+(top);
-	pathList += " Q "+(left+flex[0])+" "+(top+flex[1])+" "+(left+12)+" "+(top+6);
-	pathList += " M "+(left)+" "+(top+12);
-	pathList += " Q "+(left+flex[2])+" "+(top+flex[3])+" "+(left+12)+" "+(top+6);
-	if(attr.arrowType == "concave") {
-		pathList += " M "+(left+11)+" "+top;
-		pathList += " L "+(left+11)+" "+(top+12);
-	}
-	path.setAttributeNS(null, "d", pathList);
-	path.setAttributeNS(null, "transform", attr.transform);
 	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.id = id;
+	var d = "";
+	d = "M "+(left)+" "+(top);
+	d += " Q "+(left+flex[0])+" "+(top+flex[1])+" "+(left+12)+" "+(top+6);
+	d += " M "+(left)+" "+(top+12);
+	d += " Q "+(left+flex[2])+" "+(top+flex[3])+" "+(left+12)+" "+(top+6);
+	if(attr.arrowType == "concave") {
+		d += " M "+(left+11)+" "+top;
+		d += " L "+(left+11)+" "+(top+12);
+	}
+	path.setAttributeNS(null, "d", d);
+	path.setAttributeNS(null, "transform", attr.transform);
 	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = "none";
@@ -4613,18 +4704,18 @@ PolyLineEdge.curveArrowHead = function(svg, id, left, top, attr) {
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
 PolyLineEdge.lineArrowHead = function(svg, id, left, top, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-	path.id = id;
 	left -= attr.arrowType.search("dash") > -1 ? 13 : 3;
 	top -= 7;
-	
 	var vary = attr.arrowType == "skewed_dash" ? 3 : 0;
-	var pathList = "M "+(left-vary)+" "+(top);
-	pathList += " L "+(left+vary)+" "+(top+14);
-	path.setAttributeNS(null, "d", pathList);
-	path.setAttributeNS(null, "transform", attr.transform);
 	
-	style = path.style;
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.id = id;
+	var d = "";
+	d += "M "+(left-vary)+" "+(top);
+	d += " L "+(left+vary)+" "+(top+14);
+	path.setAttributeNS(null, "d", d);
+	path.setAttributeNS(null, "transform", attr.transform);
+	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = "none";
 	style.stroke = attr.stroke;
@@ -4646,21 +4737,21 @@ PolyLineEdge.lineArrowHead = function(svg, id, left, top, attr) {
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
 PolyLineEdge.standardArrowHead = function(svg, id, left, top, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-	path.id = id;
 	var horOffset = attr.arrowType == "short" ? 7 : 11;
 	left -= horOffset;
 	top -= 5;
 	
-	var pathList = "M "+(left)+" "+(top);
-	pathList += " L "+(left+horOffset)+" "+(top+5);
-	pathList += " L "+(left)+" "+(top+10);
-	pathList += " L "+(left+4)+" "+(top+5);
-	pathList += " L "+(left)+" "+(top);
-	pathList += " Z";
-	path.setAttributeNS(null, "d", pathList);
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.id = id;
+	var d = "";
+	d += "M "+(left)+" "+(top);
+	d += " L "+(left+horOffset)+" "+(top+5);
+	d += " L "+(left)+" "+(top+10);
+	d += " L "+(left+4)+" "+(top+5);
+	d += " L "+(left)+" "+(top);
+	d += " Z";
+	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "transform", attr.transform);
-	
 	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = attr.stroke;
@@ -4683,18 +4774,18 @@ PolyLineEdge.standardArrowHead = function(svg, id, left, top, attr) {
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
 PolyLineEdge.plainArrowHead = function(svg, id, left, top, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-	path.id = id;
 	left -= 13;
 	top -= 5;
 	
-	var pathList = "M "+(left)+" "+(top);
-	pathList += " L "+(left+13)+" "+(top+5);
-	pathList += " L "+(left)+" "+(top+10);
-	path.setAttributeNS(null, "d", pathList);
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.id = id;
+	var d = "";
+	d += "M "+(left)+" "+(top);
+	d += " L "+(left+13)+" "+(top+5);
+	d += " L "+(left)+" "+(top+10);
+	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "transform", attr.transform);
-	
-	style = path.style;
+	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = "none";
 	style.stroke = attr.stroke;
@@ -4716,17 +4807,17 @@ PolyLineEdge.plainArrowHead = function(svg, id, left, top, attr) {
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
 PolyLineEdge.oneArrowHead = function(svg, id, left, top, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-	path.id = id;
 	left -= 7;
 	top -= 8;
 	
-	var pathList = "M "+(left)+" "+(top);
-	pathList += " L "+(left)+" "+(top+16);
-	path.setAttributeNS(null, "d", pathList);
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.id = id;
+	var d = "";
+	d += "M "+(left)+" "+(top);
+	d += " L "+(left)+" "+(top+16);
+	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "transform", attr.transform);
-	
-	style = path.style;
+	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = "none";
 	style.stroke = attr.stroke;
@@ -4750,16 +4841,14 @@ PolyLineEdge.oneArrowHead = function(svg, id, left, top, attr) {
 PolyLineEdge.manyArrowHead = function(svg, id, left, top, attr) {
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	path.id = id;
-	left -= 14;
-	
-	var pathList = "M "+(left+5)+" "+(top);
-	pathList += " L "+(left+14)+" "+(top-8);
-	pathList += " M "+(left+5)+" "+(top);
-	pathList += " L "+(left+14)+" "+(top+8);
-	path.setAttributeNS(null, "d", pathList);
+	var d = "";
+	d += "M "+(left-9)+" "+(top);
+	d += " L "+(left)+" "+(top-8);
+	d += " M "+(left-9)+" "+(top);
+	d += " L "+(left)+" "+(top+8);
+	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "transform", attr.transform);
-	
-	style = path.style;
+	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = "none";
 	style.stroke = attr.stroke;
@@ -4781,14 +4870,15 @@ PolyLineEdge.manyArrowHead = function(svg, id, left, top, attr) {
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
 PolyLineEdge.optionalArrowHead = function(svg, id, left, top, attr) {
+	left -= 15;
+	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "circle");
 	path.id = id;
-	path.setAttributeNS(null, "cx", left-15);
+	path.setAttributeNS(null, "cx", left);
 	path.setAttributeNS(null, "cy", top);
 	path.setAttributeNS(null, "r", 5);
 	path.setAttributeNS(null, "transform", attr.transform);
-	
-	style = path.style;
+	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = "white";
 	style.stroke = attr.stroke;
@@ -4810,16 +4900,16 @@ PolyLineEdge.optionalArrowHead = function(svg, id, left, top, attr) {
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
 PolyLineEdge.mandatoryArrowHead = function(svg, id, left, top, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-	path.id = id;
 	left -= 14;
 	
-	var pathList = "M "+(left)+" "+(top-8);
-	pathList += " L "+(left)+" "+(top+8);
-	path.setAttributeNS(null, "d", pathList);
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+	path.id = id;
+	var d = "";
+	d += "M "+(left)+" "+(top-8);
+	d += " L "+(left)+" "+(top+8);
+	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "transform", attr.transform);
-	
-	style = path.style;
+	var style = path.style;
 	style["stroke-width"] = 1;
 	style.fill = "none";
 	style.stroke = attr.stroke;

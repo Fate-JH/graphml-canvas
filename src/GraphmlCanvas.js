@@ -702,7 +702,7 @@ GraphmlCanvas.prototype.prepareElements = function(graph, structures, xml) {
 				entryNamespace = GraphmlNamespace.get(entrySchema);
 				if(entryNamespace) {
 					entryRepresentation = entryNamespace.getSpecificClass(entry.representation); // This is the specific namespace representation of the data
-					if(!graph.getNamespace[entrySchema]) { // We don't want to allocate a used namespace more than once
+					if(!graph.getNamespace(entrySchema)) { // We don't want to allocate a used namespace more than once
 						graph.setNamespace(entrySchema, entryNamespace)
 						usedNamespaces.push(entryNamespace);
 					}

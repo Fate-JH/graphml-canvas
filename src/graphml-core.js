@@ -137,12 +137,12 @@ GraphmlElement.prototype.buildRepresentation = function() {
 		this.representation = object;
 	}
 	catch(err) {
-		if(!xml)
+		if(!attributes.xml)
 			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but there was no data");
-		else if(!rep)
+		else if(!representation)
 			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but could not build a working parser");
 		else if(!object)
-			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but could not build a "+rep.name+" visual representation");
+			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but could not build a "+representation.name+" visual representation");
 		if(!workingRepresentation) // We failed to construct this Representation and it had not previously been constructed; discard it
 			this.representation = null;
 		return false;
@@ -324,12 +324,7 @@ Representation.prototype.setAttributes = function(attributes) {
  * @returns {Number} o.height - the span called height
  */
 Representation.prototype.getBounds = function() {
-	var attr = this.getAttributes();
-	var X = attr.x || 0;
-	var Y = attr.y || 0;
-	var W = attr.width || 0;
-	var H = attr.height || 0;
-	return { x:X, y:Y, width:W, height:H };
+	return { x:0, y:0, width:0, height:0 };
 }
 
 /**
@@ -339,10 +334,9 @@ Representation.prototype.getBounds = function() {
  * @param {Number} bounds.y - the y-coordinate of the element ("top" in HTML)
  * @param {Number} bounds.width - the span called width
  * @param {Number} bounds.height - the span called height
- * @returns {Boolean} always returns false
+ * @param {Boolean} increment - rather than just setting the bounds, the new bounds is used as an offset
  */
-Representation.prototype.setBounds = function(bounds) {
-	return false;
+Representation.prototype.setBounds = function(bounds, increment) {
 }
 
 /**
@@ -366,6 +360,7 @@ Representation.prototype.createElement = function(attr) {
 	container.id = this.id+"-representation";
 	return container;
 }
+
 
 /**
  * Get a printable representation of this object.
@@ -628,7 +623,7 @@ Node.prototype.getSubgraphs = function() {
  * @returns {Boolean} always returns false
  */
 Node.prototype.setSubgraphs = function(subgraphs) {
-	// Currently, not supported
+	// TODO: currently, not supported
 	return false;
 }
 
