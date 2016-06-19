@@ -7,8 +7,8 @@ yWorks.setSpecificClass(null, this["UMLNoteNode"]);
 yWorks.setSpecificClass(null, this["ShapeNode"]);
 yWorks.setSpecificClass(null, this["GenericNode"]);
 yWorks.setSpecificClass(null, this["SVGNode"]);
-yWorks.setSpecificClass(null, this["PolyLineEdge"]);
 yWorks.setSpecificClass(null, this["ProxyAutoBoundsNode"]);
+yWorks.setSpecificClass(null, this["PolyLineEdge"]);
 
 /**
  * The entry point for setting up the nodes from their data.
@@ -2028,7 +2028,7 @@ GenericNode.switchArtifact = function(svg, configuration, attributes) {
 }
 
 /**
- * Select (and draw) the detailing for a gateway entity.
+ * Select the detailing for a gateway entity.
  * This hub function branches to the specific entity to be drawn in SVG, exclusive to gateway-type entities.
  * @private
  * @static
@@ -2063,381 +2063,120 @@ GenericNode.switchGatewayDetails = function(svg, attr) {
 }
 
 /**
- * Select (and draw) the detailing for an event entity.
- * This hub function branches to the specific entity to be drawn in SVG, exclusive to event-type drawings.
- * Unlike an earlier hub function, this one implements SVG directly rather than pass responsibility onto another function.
- * It also serves the purpose of constructing both the exterior of the event and an interior emblem for the event.
+ * Select the detailing for an event entity.
+ * The detailing for events consists of an exterior encircling and a central emblem.
  * @private
  * @static
  * @param {SVGElement} svg - the container of the SVG data
  * @param {Object} attr - other information essential to this function
  */
 GenericNode.switchEventDetails = function(svg, attr) {
-	var geometry = attr.geometry || attr;
-	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
-	
-	var w = attr.width, w2 = w/2 + 1;
-	var h = attr.height, h2 = h/2 + 1;
-	var len = Math.min(w, h), len2 = len/2;
-	var circle = null, d = "", style = null, dashed = null;
-	var svgns = "http://www.w3.org/2000/svg";
-	var borderColor = attr.borderColor;
-	
-	var type1 = attr.styleProperties["com.yworks.bpmn.characteristic"]; // Outline design
-	switch(type1) {
+	GenericNode.switchEventCharacteristic(svg, attr);
+	GenericNode.switchEventEmblem(svg, attr);
+}
+
+/**
+ * Select the characteristic for an event entity.
+ * This hub function branches to the specific entity to be drawn in SVG, exclusive to event-type drawings.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container of the SVG data
+ * @param {Object} attr - other information essential to this function
+ */
+GenericNode.switchEventCharacteristic = function(svg, attr) {
+	var type = attr.styleProperties["com.yworks.bpmn.characteristic"]; // Outline design
+	switch(type) {
 		case "EVENT_CHARACTERISTIC_START_EVENT_SUB_PROCESS_NON_INTERRUPTING": // Single outline, dashed
-			dashed = yWorks.createSVGLinePattern("dashed", 1);
-			// Fall through
 		case "EVENT_CHARACTERISTIC_START": // Single outline, solid
 		case "EVENT_CHARACTERISTIC_START_EVENT_SUB_PROCESS_INTERRUPTING":
-			circle = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M 1 "+(h2);
-			d += " A "+(len2)+" "+(len2)+" 0 0 1 "+(w2+len2)+" "+(h2);
-			d += " A "+(len2)+" "+(len2)+" 0 0 1 "+(w2-len2)+" "+(h2);
-			circle.setAttributeNS(null, "d", d);
-			circle.setAttributeNS(null, "stroke-dasharray", dashed);
-			style = circle.style;
-			style.fill = "none"
-			style.stroke = borderColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(circle);
+			GenericNode.createEventStart(svg, type, attr);
 			break;
-		
 		case "EVENT_CHARACTERISTIC_INTERMEDIATE_BOUNDARY_NON_INTERRUPTING": // Double line, dashed
-			dashed = yWorks.createSVGLinePattern("dashed", 1);
-			// Fall through
 		case "EVENT_CHARACTERISTIC_INTERMEDIATE_CATCHING": // Double line, solid
 		case "EVENT_CHARACTERISTIC_INTERMEDIATE_BOUNDARY_INTERRUPTING":
 		case "EVENT_CHARACTERISTIC_INTERMEDIATE_THROWING":
-			var len23 = len2-3;
-			circle = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M 1 "+(h2);
-			d += " A "+(len2)+" "+(len2)+" 0 0 1 "+(w2+len2)+" "+(h2);
-			d += " A "+(len2)+" "+(len2)+" 0 0 1 "+(w2-len2)+" "+(h2);
-			circle.setAttributeNS(null, "d", d);
-			circle.setAttributeNS(null, "stroke-dasharray", dashed);
-			style = circle.style;
-			style.fill = "none"
-			style.stroke = borderColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(circle);
-			
-			circle = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M 3 "+(h2);
-			d += " A "+(len23)+" "+(len23)+" 0 0 1 "+(w2+len23)+" "+(h2);
-			d += " A "+(len23)+" "+(len23)+" 0 0 1 "+(w2-len23-1)+" "+(h2);
-			circle.setAttributeNS(null, "d", d);
-			circle.setAttributeNS(null, "stroke-dasharray", dashed);
-			style = circle.style;
-			style.fill = "none"
-			style.stroke = borderColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(circle);
+			GenericNode.createEventIntermediate(svg, type, attr);
 			break;
-		
 		case "EVENT_CHARACTERISTIC_END": // Single line, solid, thick
-			circle = document.createElementNS(svgns, "circle");
-			circle.setAttributeNS(null, "cx", w2);
-			circle.setAttributeNS(null, "cy", h2);
-			circle.setAttributeNS(null, "r", len2-2);
-			style = circle.style;
-			style.fill = "none"
-			style.stroke = borderColor;
-			style["stroke-width"] = 3;
-			svg.appendChild(circle);
+			GenericNode.createEventEnd(svg, type, attr);
 			break;
 		default:
-			console.log("No graphics for "+this.id+" characteristic - '"+type1+"'");
+			console.log("No graphics for "+attr.id+" characteristic - '"+type+"'");
+	}
+}
+
+/**
+ * Select the emblem type for an event entity.
+ * This hub function branches to the specific entity to be drawn in SVG, exclusive to event-type drawings.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container of the SVG data
+ * @param {Object} attr - other information essential to this function
+ */
+GenericNode.switchEventEmblem = function(svg, attr) {
+	var geometry = attr.geometry || attr;
+	var fill = attr.fill || attr;
+	var borderStyle1 = attr.borderStyle1 || attr;
+	var styleProperties = attr.styleProperties || attr;
+	
+	var cattr = { id:attr.id, geometry:geometry, fill:fill, borderStyle1:borderStyle1 };
+	cattr.bdColor = styleProperties["com.yworks.bpmn.icon.line.color"];
+	var type1 = attr.styleProperties["com.yworks.bpmn.characteristic"]; // Outline design
+	if(type1 == "EVENT_CHARACTERISTIC_INTERMEDIATE_THROWING" || type1 == "EVENT_CHARACTERISTIC_END") {
+		cattr.bgColor = "black";
+		cattr.detailColor = "white";
+	}
+	else {
+		var w = geometry.width;
+		var h = geometry.height;
+		var color1 = styleProperties["com.yworks.bpmn.icon.fill"];
+		var color2 = styleProperties["com.yworks.bpmn.icon.fill2"];
+		cattr.bgColor = yWorks.setupLinearGradient(svg, {id:attr.id+"_detail_gradient", x2:1, y2:1, width:w, height:h, color1:color1, color2:color2}).color;
+		cattr.detailColor = cattr.bdColor;
 	}
 	
-	var color1 = attr.styleProperties["com.yworks.bpmn.icon.fill"], color2 = attr.styleProperties["com.yworks.bpmn.icon.fill2"];
-	var borderWidth = attr.borderWidth;
-	var bdColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"];
-	var detailColor = bdColor;
-	var bgColor = yWorks.setupLinearGradient(svg, {id:this.id+"_detail_gradient", x2:1, y2:1, width:attr.width, height:attr.height, color1:color1, color2:color2}).color;
-	if(type1 == "EVENT_CHARACTERISTIC_INTERMEDIATE_THROWING" || type1 == "EVENT_CHARACTERISTIC_END") {
-		bgColor = "black";
-		detailColor = "white";
-	}
 	var type2 = attr.styleProperties["com.yworks.bpmn.type"]; // Central emblem
 	switch(type2) {
 		case "EVENT_TYPE_PLAIN": // Nothing
-			break;
-		
+			break;	
 		case "EVENT_TYPE_MESSAGE":
-			var mw = w * 0.516;
-			var mh = h * 0.35;				
-			GenericNode.createArtifactMessage(svg, "", {x:(w - mw)/2 + 1, y:(h - mh)/2 + 1, width:mw, height:mh, bgColor:bgColor, borderColor:bdColor, borderWidth:borderWidth, detailColor:detailColor});
-			break;
-			
+			GenericNode.createEventMessage(svg, type2, cattr);
+			break;			
 		case "EVENT_TYPE_TIMER":
-			var face = len2 - 0.166*len;
-			var line = null;
-			var time = new Date(), hour = time.getHours(), hAngle = -90 + /*(hour > 11 ? hour - 12 : hour)*/hour * 30, mAngle = -90 + time.getMinutes() * 6;
-			circle = document.createElementNS(svgns, "circle"); // Clock face
-			circle.setAttributeNS(null, "cx", w2);
-			circle.setAttributeNS(null, "cy", h2);
-			circle.setAttributeNS(null, "r", face);
-			style = circle.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(circle);
-			
-			for(var angle = 0; angle < 360;  angle += 30) { //Details; hour markings
-				line = document.createElementNS(svgns, "line");
-				line.setAttributeNS(null, "x1", (w2 + 0.8*face));
-				line.setAttributeNS(null, "x2", (w2 + face));
-				line.setAttributeNS(null, "y1", h2);
-				line.setAttributeNS(null, "y2", h2);
-				line.setAttributeNS(null, "transform", "rotate("+angle+" "+w2+" "+h2+")");
-				style = line.style;
-				style.fill = "none";
-				style.stroke = detailColor;
-				style["stroke-width"] = 1;
-				svg.appendChild(line);
-			}
-			
-			line = document.createElementNS(svgns, "line"); // Details; hands - hour
-			line.setAttributeNS(null, "x1", (w2));
-			line.setAttributeNS(null, "x2", (w2 + 0.6*face));
-			line.setAttributeNS(null, "y1", h2);
-			line.setAttributeNS(null, "y2", h2);
-			line.setAttributeNS(null, "transform", "rotate("+hAngle+" "+w2+" "+h2+")");
-			style = line.style;
-			style.fill = "none";
-			style.stroke = detailColor;
-			style["stroke-width"] = 0.5;
-			svg.appendChild(line);
-			line = document.createElementNS(svgns, "line"); // Details; hands - minute
-			line.setAttributeNS(null, "x1", (w2));
-			line.setAttributeNS(null, "x2", (w2 + 0.75*face));
-			line.setAttributeNS(null, "y1", h2);
-			line.setAttributeNS(null, "y2", h2);
-			line.setAttributeNS(null, "transform", "rotate("+mAngle+" "+w2+" "+h2+")");
-			style = line.style;
-			style.fill = "none";
-			style.stroke = detailColor;
-			style["stroke-width"] = 0.5;
-			svg.appendChild(line);
+			GenericNode.createEventTimer(svg, type2, cattr);
 			break;
-			
 		case "EVENT_TYPE_TERMINATE":
-			circle = document.createElementNS(svgns, "circle"); // circle face
-			circle.setAttributeNS(null, "cx", w2);
-			circle.setAttributeNS(null, "cy", h2);
-			circle.setAttributeNS(null, "r", len2 - 0.166*len);
-			style = circle.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(circle);
+			GenericNode.createEventTerminate(svg, type2, cattr);
 			break;
-		
 		case "EVENT_TYPE_PARALLEL_MULTIPLE":
-			var len0066 = 0.066*len, len0266 = 0.266*len;
-			var rect = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M "+(w2-len0066)+" "+(h2-len0266);
-			d += " L "+(w2+len0066)+" "+(h2-len0266);
-			d += " L "+(w2+len0066)+" "+(h2-len0066);
-			d += " L "+(w2+len0266)+" "+(h2-len0066);
-			d += " L "+(w2+len0266)+" "+(h2+len0066);
-			d += " L "+(w2+len0066)+" "+(h2+len0066);
-			d += " L "+(w2+len0066)+" "+(h2+len0266);
-			d += " L "+(w2-len0066)+" "+(h2+len0266);
-			d += " L "+(w2-len0066)+" "+(h2+len0066);
-			d += " L "+(w2-len0266)+" "+(h2+len0066);
-			d += " L "+(w2-len0266)+" "+(h2-len0066);
-			d += " L "+(w2-len0066)+" "+(h2-len0066);
-			d += " L "+(w2-len0066)+" "+(h2-len0266)+" Z";
-			rect.setAttributeNS(null, "d", d);
-			style = rect.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(rect);
+			GenericNode.createEventParallel(svg, type2, cattr);
 			break;
-			
 		case "EVENT_TYPE_CANCEL":
-			var len0033 = 0.033*len, len0266 = 0.266*len, len007 = Math.max(0.07*len-1, 1);
-			var path = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M "+(w2-len0266+len007)+" "+(h2-len0266);
-			d += " L "+(w2)+" "+(h2-len007); // Top center
-			d += " L "+(w2+len0266-len007)+" "+(h2-len0266);
-			d += " L "+(w2+len0266)+" "+(h2-len0266+len007);
-			d += " L "+(w2+len007)+" "+(h2); // Right center
-			d += " L "+(w2+len0266)+" "+(h2+len0266-len007);
-			d += " L "+(w2+len0266-len007)+" "+(h2+len0266);
-			d += " L "+(w2)+" "+(h2+len007); // Bottom center
-			d += " L "+(w2-len0266+len007)+" "+(h2+len0266);
-			d += " L "+(w2-len0266)+" "+(h2+len0266-len007);
-			d += " L "+(w2-len007)+" "+(h2); // Left center
-			d += " L "+(w2-len0266)+" "+(h2-len0266+len007);
-			d += " L "+(w2-len0266+len007)+" "+(h2-len0266)+" Z"; // Rejoin
-			path.setAttributeNS(null, "d", d);
-			style = path.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(path);
+			GenericNode.createEventCancel(svg, type2, cattr);
 			break;
-			
 		case "EVENT_TYPE_SIGNAL":
-			var len0266 = 0.266*len, len005 = 0.05*len, len0256 = len0266 - 2*len005;
-			var path = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M "+(w2)+" "+(h2-len0266-len005); // Top
-			d += " L "+(w2+len0266)+" "+(h2+len0256); // Right
-			d += " L "+(w2-len0266)+" "+(h2+len0256); // Left
-			d += " L "+(w2)+" "+(h2-len0266-len005)+" Z"; // Rejoin
-			path.setAttributeNS(null, "d", d);
-			style = path.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(path);
+			GenericNode.createEventSignal(svg, type2, cattr);
 			break;
-			
 		case "EVENT_TYPE_COMPENSATION":
-			var len0266 = 0.266*len, len005 = 0.05*len, len0183 = 0.183*len;
-			var wmod = w2 - len005;
-			var path = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M "+(wmod-len0266)+" "+(h2); // Left triangle
-			d += " L "+(wmod)+" "+(h2-len0183);
-			d += " L "+(wmod)+" "+(h2+len0183);
-			d += " L "+(wmod-len0266)+" "+(h2)+" Z";
-			d += "M "+(wmod)+" "+(h2); // Right triangle
-			d += " L "+(wmod+len0266)+" "+(h2-len0183);
-			d += " L "+(wmod+len0266)+" "+(h2+len0183);
-			d += " L "+(wmod)+" "+(h2)+" Z";
-			path.setAttributeNS(null, "d", d);
-			style = path.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(path);
+			GenericNode.createEventCompensation(svg, type2, cattr);
 			break;
-			
 		case "EVENT_TYPE_LINK":
-			var len0266 = 0.266*len, len0033 = 0.033*len, len0079 = 0.079*len, len0183 = 0.183*len;
-			var path = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M "+(w2-len0266+2*len0033)+" "+(h2-len0079);
-			d += " L "+(w2+len0033)+" "+(h2-len0079);
-			d += " L "+(w2+len0033)+" "+(h2-len0079-len0183);
-			d += " L "+(w2+len0266-len0033)+" "+(h2); // Point
-			d += " L "+(w2+len0033)+" "+(h2+len0079+len0183);
-			d += " L "+(w2+len0033)+" "+(h2+len0079);
-			d += " L "+(w2-len0266+2*len0033)+" "+(h2+len0079);
-			d += " L "+(w2-len0266+2*len0033)+" "+(h2-len0079)+" Z"; // Rejoin
-			path.setAttributeNS(null, "d", d);
-			style = path.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(path);
+			GenericNode.createEventLink(svg, type2, cattr);
 			break;
-		
 		case "EVENT_TYPE_ESCALATION":
-		var len0266 = 0.266*len, len0033 = 0.033*len, len0079 = 0.079*len, len0183 = 0.183*len;
-			var path = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M "+(w2)+" "+(h2-len0079);
-			d += " L "+(w2-len0266+len0079)+" "+(h2+len0266-len0079);
-			d += " L "+(w2)+" "+(h2-len0266);
-			d += " L "+(w2+len0266-len0079)+" "+(h2+len0266-len0079);
-			d += " L "+(w2)+" "+(h2-len0079)+" Z"; // Rejoin
-			path.setAttributeNS(null, "d", d);
-			style = path.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(path);
+			GenericNode.createEventEscalation(svg, type2, cattr);
 			break;
-		
 		case "EVENT_TYPE_ERROR":
-			var len0033 = 0.033*len, len0266 = 0.266*len, len007 = Math.max(0.07*len-1, 1), len5 = len/5, len10 = len5/2;
-			var path = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M "+(w2-len0266)+" "+(h2+len0266); // Left corner
-			d += " L "+(w2-len10)+" "+(h2-len0266+len007);
-			d += " L "+(w2+len10)+" "+(h2+2*len0033);
-			d += " L "+(w2+len0266)+" "+(h2-len0266); // Right corner
-			d += " L "+(w2+len10)+" "+(h2+len0266-len007);
-			d += " L "+(w2-len10)+" "+(h2-len0033);
-			d += " L "+(w2-len0266)+" "+(h2+len0266)+" Z"; // Rejoin
-			path.setAttributeNS(null, "d", d);
-			style = path.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(path);
+			GenericNode.createEventError(svg, type2, cattr);
 			break;
-		
 		case "EVENT_TYPE_MULTIPLE":
-			var len0033 = 0.033*len, len0283 = 0.283*len, len0266 = 0.266*len, len0183 = 0.183*len, len007 = Math.max(0.07*len-1, 1), len5 = len/5, len10 = len5/2;
-			var len03 = 0.3*len, len025 = 0.25*len, len0083 = 0.083*len;
-			var path = document.createElementNS(svgns, "path");
-			d = "";
-			d += "M "+(w2)+" "+(h2-len03); // Top
-			d += " L "+(w2-len0283)+" "+(h2-len0083); // Left
-			d += " L "+(w2-len0183)+" "+(h2+len025); // Bottom left
-			d += " L "+(w2+len0183)+" "+(h2+len025); // Bottom right
-			d += " L "+(w2+len0283)+" "+(h2-len0083); // Right
-			d += " L "+(w2)+" "+(h2-len03); // Rejoin
-			path.setAttributeNS(null, "d", d);
-			style = path.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(path);
+			GenericNode.createEventMultiple(svg, type2, cattr);
 			break;
-		
 		case "EVENT_TYPE_CONDITIONAL":
-			var len0258 = 0.258*len, len0204 = 0.204*len, len0158 = 0.158*len;
-			var len0208 = 0.208*len, len0183 = 0.183*len, len01 = 0.1*len, len0041 = 0.041*len;
-			
-			var path = document.createElementNS(svgns, "path"); // Page
-			d = "";
-			d += "M "+(w2+len0204)+" "+(h2-len0258); // Q1
-			d += " L "+(w2-len0204)+" "+(h2-len0258); // Q2
-			d += " L "+(w2-len0204)+" "+(h2+len0258); // Q3
-			d += " L "+(w2+len0204)+" "+(h2+len0258); // Q4
-			d += " L "+(w2+len0204)+" "+(h2-len0258); // Rejoin
-			path.setAttributeNS(null, "d", d);
-			style = path.style;
-			style.fill = bgColor;
-			style.stroke = bdColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(path);
-			
-			var path = document.createElementNS(svgns, "path"); // Details
-			d = "";
-			d += "M "+(w2-len0158)+" "+(h2-len0208); // L1-Start
-			d += " L "+(w2+len0158)+" "+(h2-len0208); // L1-End
-			d += "M "+(w2-len0158)+" "+(h2-len01); // L2-Start
-			d += " L "+(w2+len0158)+" "+(h2-len01); // L2-End
-			d += "M "+(w2-len0158)+" "+(h2+len0041); // L3-Start
-			d += " L "+(w2+len0158)+" "+(h2+len0041); // L3-End
-			d += "M "+(w2-len0158)+" "+(h2+len0183); // L4-Start
-			d += " L "+(w2+len0158)+" "+(h2+len0183); // L4-End
-			path.setAttributeNS(null, "d", d);
-			style = path.style;
-			style.fill = "none";
-			style.stroke = detailColor;
-			style["stroke-width"] = 1;
-			svg.appendChild(path);
+			GenericNode.createEventConditional(svg, type2, cattr);
 			break;
-		
 		default:
-			console.log("No graphics for "+this.id+" icon - '"+type2+"'");
+			console.log("No graphics for "+attr.id+" emblem - '"+type2+"'");
 	}
 }
 
@@ -3473,7 +3212,7 @@ GenericNode.createConversation = function(svg, configuration, attr) {
 	d += " L "+(w21-len2)+" "+(h21);
 	d += " L "+(w21-len4)+" "+(h21-lenh)+" Z";
 	path.setAttributeNS(null, "d", d);
-	circle.setAttributeNS(null, "stroke-dasharray", dashed);
+	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = path.style;
 	style.fill = color;
 	style.stroke = borderStyle.borderColor;
@@ -3608,6 +3347,24 @@ GenericNode.createArtifactMessage = function(svg, type, attr) {
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
+	var color = attr.bgColor;
+	if(!color) {
+		var color1 = fill.color;
+		var color2 = fill.color2;
+		if(type.search("REPLY") != -1) { // Tint the background color darker
+			if(color1) {
+				var ret = yWorks.colorAndOpacity(color1);
+				color1 = yWorks.shadeBlendConvert(0.25, ret.color, "#000000");
+				color1 = yWorks.colorAndOpacity(color1, ret.opacity).color;
+			}
+			if(color2) {
+				var ret = yWorks.colorAndOpacity(color2);
+				color2 = yWorks.shadeBlendConvert(0.25, ret.color, "#000000");
+				color2 = yWorks.colorAndOpacity(color2, ret.opacity).color;
+			}
+		}
+		color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:color1, color2:color2}).color;
+	}
 	
 	var svgns = "http://www.w3.org/2000/svg";
 	var rect = document.createElementNS(svgns, "rect"), style = null; // Envelope outline
@@ -3617,22 +3374,8 @@ GenericNode.createArtifactMessage = function(svg, type, attr) {
 	rect.setAttributeNS(null, "height", h);
 	rect.setAttributeNS(null, "stroke-dasharray", dashed);
 	style = rect.style;
-	var color1 = fill.color;
-	var color2 = fill.color2;
-	if(type.search("REPLY") != -1) { // Tint the background color darker
-		if(color1) {
-			var ret = yWorks.colorAndOpacity(color1);
-			color1 = yWorks.shadeBlendConvert(0.25, ret.color, "#000000");
-			color1 = yWorks.colorAndOpacity(color1, ret.opacity).color;
-		}
-		if(color2) {
-			var ret = yWorks.colorAndOpacity(color2);
-			color2 = yWorks.shadeBlendConvert(0.25, ret.color, "#000000");
-			color2 = yWorks.colorAndOpacity(color2, ret.opacity).color;
-		}
-	}
-	style.fill = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:color1, color2:color2}).color;
-	style.stroke = borderStyle.borderColor;
+	style.fill = color;
+	style.stroke = attr.bdColor || borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	svg.appendChild(rect);
 	
@@ -3679,7 +3422,7 @@ GenericNode.createDataStore = function(svg, type, attr) {
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	style = path.style;
-	style.fill = ret.color;
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	svg.appendChild(path);
@@ -3906,6 +3649,565 @@ GenericNode.prototype.createGatewayComplexParallel = function(svg, type, attr) {
 	style.fill = "none";
 	style.stroke = bdColor;
 	style["stroke-width"] = boldLineWidth;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw a single circular outline around this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventStart = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len2 = len/2;
+	var dashed = null;
+	
+	if(type == "EVENT_CHARACTERISTIC_START_EVENT_SUB_PROCESS_NON_INTERRUPTING")
+		dashed = yWorks.createSVGLinePattern("dashed", 1);
+
+	var circle = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M 1 "+(h2);
+	d += " A "+(len2)+" "+(len2)+" 0 0 1 "+(w2+len2)+" "+(h2);
+	d += " A "+(len2)+" "+(len2)+" 0 0 1 "+(w2-len2)+" "+(h2);
+	circle.setAttributeNS(null, "d", d);
+	circle.setAttributeNS(null, "stroke-dasharray", dashed);
+	var style = circle.style;
+	style.fill = "none"
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(circle);
+}
+
+/**
+ * Draw a double circular outline around this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventIntermediate = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len2 = len/2, len23 = len2 - 3;
+	var dashed = null;
+	
+	if(type == "EVENT_CHARACTERISTIC_INTERMEDIATE_BOUNDARY_NON_INTERRUPTING")
+		dashed = yWorks.createSVGLinePattern("dashed", 1);
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var circle = document.createElementNS(svgns, "path"), d = null, style = null;
+	d = "";
+	d += "M 1 "+(h2);
+	d += " A "+(len2)+" "+(len2)+" 0 0 1 "+(w2+len2)+" "+(h2);
+	d += " A "+(len2)+" "+(len2)+" 0 0 1 "+(w2-len2)+" "+(h2);
+	circle.setAttributeNS(null, "d", d);
+	circle.setAttributeNS(null, "stroke-dasharray", dashed);
+	style = circle.style;
+	style.fill = "none"
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(circle);
+	
+	circle = document.createElementNS(svgns, "path");
+	d = "";
+	d += "M 3 "+(h2);
+	d += " A "+(len23)+" "+(len23)+" 0 0 1 "+(w2+len23)+" "+(h2);
+	d += " A "+(len23)+" "+(len23)+" 0 0 1 "+(w2-len23-1)+" "+(h2);
+	circle.setAttributeNS(null, "d", d);
+	circle.setAttributeNS(null, "stroke-dasharray", dashed);
+	style = circle.style;
+	style.fill = "none"
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(circle);
+}
+
+/**
+ * Draw a single thick circular outline around this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventEnd = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var borderStyle = attr.borderStyle1 || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len2 = len/2;
+	
+	var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+	circle.setAttributeNS(null, "cx", w2);
+	circle.setAttributeNS(null, "cy", h2);
+	circle.setAttributeNS(null, "r", len2-2);
+	var style = circle.style;
+	style.fill = "none"
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = 3;
+	svg.appendChild(circle);
+}
+
+/**
+ * Draw an envelope shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ * @see GenericNode.createArtifactMessage
+ */
+GenericNode.createEventMessage = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, mw = 0.516 * w, mx = 0.242 * w + 1;
+	var h = geometry.height, mh = 0.35 * h, my = 0.325 * h + 1;
+	
+	GenericNode.createArtifactMessage(svg, "", {
+		x:mx,
+		y:my,
+		geometry:{width:mw, height:mh},
+		fill:attr.fill,
+		borderStyle1:attr.borderStyle1,
+		bgColor:attr.bgColor,
+		bdColor:attr.bdColor,
+		detailColor:attr.detailColor
+	});
+}
+
+/**
+ * Draw a clock shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventTimer = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len2 = len/2;
+	var face = len2 - 0.166*len;
+	var time = new Date(), hour = time.getHours();
+	var	hAngle = -90 + hour * 30;
+	var mAngle = -90 + time.getMinutes() * 6;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	var detailColor = attr.detailColor || "black";
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var line = null, style = null;
+	var circle = document.createElementNS(svgns, "circle"); // Clock face
+	circle.setAttributeNS(null, "cx", w2);
+	circle.setAttributeNS(null, "cy", h2);
+	circle.setAttributeNS(null, "r", face);
+	style = circle.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(circle);
+	
+	for(var angle = 0; angle < 360;  angle += 30) { //Details; hour markings
+		line = document.createElementNS(svgns, "line");
+		line.setAttributeNS(null, "x1", (w2 + 0.8*face));
+		line.setAttributeNS(null, "x2", (w2 + face));
+		line.setAttributeNS(null, "y1", h2);
+		line.setAttributeNS(null, "y2", h2);
+		line.setAttributeNS(null, "transform", "rotate("+angle+" "+w2+" "+h2+")");
+		style = line.style;
+		style.fill = "none";
+		style.stroke = detailColor;
+		style["stroke-width"] = 1;
+		svg.appendChild(line);
+	}
+	
+	line = document.createElementNS(svgns, "line"); // Details; hands - hour
+	line.setAttributeNS(null, "x1", (w2));
+	line.setAttributeNS(null, "x2", (w2 + 0.6*face));
+	line.setAttributeNS(null, "y1", h2);
+	line.setAttributeNS(null, "y2", h2);
+	line.setAttributeNS(null, "transform", "rotate("+hAngle+" "+w2+" "+h2+")");
+	style = line.style;
+	style.fill = "none";
+	style.stroke = detailColor;
+	style["stroke-width"] = 0.5;
+	svg.appendChild(line);
+	
+	line = document.createElementNS(svgns, "line"); // Details; hands - minute
+	line.setAttributeNS(null, "x1", (w2));
+	line.setAttributeNS(null, "x2", (w2 + 0.75*face));
+	line.setAttributeNS(null, "y1", h2);
+	line.setAttributeNS(null, "y2", h2);
+	line.setAttributeNS(null, "transform", "rotate("+mAngle+" "+w2+" "+h2+")");
+	style = line.style;
+	style.fill = "none";
+	style.stroke = detailColor;
+	style["stroke-width"] = 0.5;
+	svg.appendChild(line);
+}
+
+/**
+ * Draw a circular shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventTerminate = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len2 = len/2;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	
+	var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle"); // circle face
+	circle.setAttributeNS(null, "cx", w2);
+	circle.setAttributeNS(null, "cy", h2);
+	circle.setAttributeNS(null, "r", len2 - 0.166*len);
+	var style = circle.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(circle);
+}
+
+/**
+ * Draw a rectangular shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventParallel = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len0066 = 0.066*len, len0266 = 0.266*len;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	
+	var rect = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	d = "";
+	d += "M "+(w2-len0066)+" "+(h2-len0266);
+	d += " L "+(w2+len0066)+" "+(h2-len0266);
+	d += " L "+(w2+len0066)+" "+(h2-len0066);
+	d += " L "+(w2+len0266)+" "+(h2-len0066);
+	d += " L "+(w2+len0266)+" "+(h2+len0066);
+	d += " L "+(w2+len0066)+" "+(h2+len0066);
+	d += " L "+(w2+len0066)+" "+(h2+len0266);
+	d += " L "+(w2-len0066)+" "+(h2+len0266);
+	d += " L "+(w2-len0066)+" "+(h2+len0066);
+	d += " L "+(w2-len0266)+" "+(h2+len0066);
+	d += " L "+(w2-len0266)+" "+(h2-len0066);
+	d += " L "+(w2-len0066)+" "+(h2-len0066);
+	d += " L "+(w2-len0066)+" "+(h2-len0266)+" Z";
+	rect.setAttributeNS(null, "d", d);
+	var style = rect.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(rect);
+}
+
+/**
+ * Draw a thick 'x' in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventCancel = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len0266 = 0.266*len, len007 = Math.max(0.07*len-1, 1);
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M "+(w2-len0266+len007)+" "+(h2-len0266);
+	d += " L "+(w2)+" "+(h2-len007); // Top center
+	d += " L "+(w2+len0266-len007)+" "+(h2-len0266);
+	d += " L "+(w2+len0266)+" "+(h2-len0266+len007);
+	d += " L "+(w2+len007)+" "+(h2); // Right center
+	d += " L "+(w2+len0266)+" "+(h2+len0266-len007);
+	d += " L "+(w2+len0266-len007)+" "+(h2+len0266);
+	d += " L "+(w2)+" "+(h2+len007); // Bottom center
+	d += " L "+(w2-len0266+len007)+" "+(h2+len0266);
+	d += " L "+(w2-len0266)+" "+(h2+len0266-len007);
+	d += " L "+(w2-len007)+" "+(h2); // Left center
+	d += " L "+(w2-len0266)+" "+(h2-len0266+len007);
+	d += " L "+(w2-len0266+len007)+" "+(h2-len0266)+" Z"; // Rejoin
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw a triangle shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventSignal = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len0266 = 0.266*len, len005 = 0.05*len, len0216 = len0266 - len005, len0166 = len0266 - 2*len005;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M "+(w2)+" "+(h2-len0216); // Top
+	d += " L "+(w2+len0266)+" "+(h2+len0166); // Right
+	d += " L "+(w2-len0266)+" "+(h2+len0166); // Left
+	d += " L "+(w2)+" "+(h2-len0216)+" Z"; // Rejoin
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw two arrow shapes in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventCompensation = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len0266 = 0.266*len, len005 = 0.05*len, len0183 = 0.183*len;
+	var wmod = w2 - len005;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	d = "";
+	d += "M "+(wmod-len0266)+" "+(h2); // Left triangle
+	d += " L "+(wmod)+" "+(h2-len0183);
+	d += " L "+(wmod)+" "+(h2+len0183);
+	d += " L "+(wmod-len0266)+" "+(h2)+" Z";
+	d += "M "+(wmod)+" "+(h2); // Right triangle
+	d += " L "+(wmod+len0266)+" "+(h2-len0183);
+	d += " L "+(wmod+len0266)+" "+(h2+len0183);
+	d += " L "+(wmod)+" "+(h2)+" Z";
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw an arrow shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventLink = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len0266 = 0.266*len, len0033 = 0.033*len, len0079 = 0.079*len, len0183 = 0.183*len;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M "+(w2-len0266+2*len0033)+" "+(h2-len0079);
+	d += " L "+(w2+len0033)+" "+(h2-len0079);
+	d += " L "+(w2+len0033)+" "+(h2-len0079-len0183);
+	d += " L "+(w2+len0266-len0033)+" "+(h2); // Point
+	d += " L "+(w2+len0033)+" "+(h2+len0079+len0183);
+	d += " L "+(w2+len0033)+" "+(h2+len0079);
+	d += " L "+(w2-len0266+2*len0033)+" "+(h2+len0079);
+	d += " L "+(w2-len0266+2*len0033)+" "+(h2-len0079)+" Z"; // Rejoin
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw a thin upwards arrow shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventEscalation = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len0266 = 0.266*len, len0033 = 0.033*len, len0079 = 0.079*len, len0183 = 0.183*len;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M "+(w2)+" "+(h2-len0079);
+	d += " L "+(w2-len0266+len0079)+" "+(h2+len0266-len0079);
+	d += " L "+(w2)+" "+(h2-len0266);
+	d += " L "+(w2+len0266-len0079)+" "+(h2+len0266-len0079);
+	d += " L "+(w2)+" "+(h2-len0079)+" Z"; // Rejoin
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw an electrical bolt-like shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventError = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h), len0033 = 0.033*len, len0266 = 0.266*len, len007 = Math.max(0.07*len-1, 1), len5 = len/5, len10 = len5/2;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M "+(w2-len0266)+" "+(h2+len0266); // Left corner
+	d += " L "+(w2-len10)+" "+(h2-len0266+len007);
+	d += " L "+(w2+len10)+" "+(h2+2*len0033);
+	d += " L "+(w2+len0266)+" "+(h2-len0266); // Right corner
+	d += " L "+(w2+len10)+" "+(h2+len0266-len007);
+	d += " L "+(w2-len10)+" "+(h2-len0033);
+	d += " L "+(w2-len0266)+" "+(h2+len0266)+" Z"; // Rejoin
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw a pentagon shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventMultiple = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h);
+	var len0083 = 0.083*len, len0183 = 0.183*len, len0283 = 0.283*len;
+	var len025 = 0.25*len, len03 = 0.3*len;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M "+(w2)+" "+(h2-len03); // Top
+	d += " L "+(w2-len0283)+" "+(h2-len0083); // Left
+	d += " L "+(w2-len0183)+" "+(h2+len025); // Bottom left
+	d += " L "+(w2+len0183)+" "+(h2+len025); // Bottom right
+	d += " L "+(w2+len0283)+" "+(h2-len0083); // Right
+	d += " L "+(w2)+" "+(h2-len03); // Rejoin
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw a page shape in this event entity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createEventConditional = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width, w2 = w/2 + 1;
+	var h = geometry.height, h2 = h/2 + 1;
+	var len = Math.min(w, h);
+	var len0258 = 0.258*len, len0204 = 0.204*len;
+	var len0158 = 0.158*len, len0208 = 0.208*len, len01 = 0.1*len, len0041 = 0.041*len, len0183 = 0.183*len;
+	var bgColor = attr.bgColor || "black";
+	var bdColor = attr.bdColor || "black";
+	var detailColor = attr.detailColor || bdColor;
+	
+	var path = null, d = null, style = null;
+	var svgns = "http://www.w3.org/2000/svg";
+	path = document.createElementNS(svgns, "path"); // Page
+	d = "";
+	d += "M "+(w2+len0204)+" "+(h2-len0258); // Q1
+	d += " L "+(w2-len0204)+" "+(h2-len0258); // Q2
+	d += " L "+(w2-len0204)+" "+(h2+len0258); // Q3
+	d += " L "+(w2+len0204)+" "+(h2+len0258); // Q4
+	d += " L "+(w2+len0204)+" "+(h2-len0258); // Rejoin
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = bgColor;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+	
+	path = document.createElementNS(svgns, "path"); // Details
+	d = "";
+	d += "M "+(w2-len0158)+" "+(h2-len0208); // L1-Start
+	d += " L "+(w2+len0158)+" "+(h2-len0208); // L1-End
+	d += "M "+(w2-len0158)+" "+(h2-len01); // L2-Start
+	d += " L "+(w2+len0158)+" "+(h2-len01); // L2-End
+	d += "M "+(w2-len0158)+" "+(h2+len0041); // L3-Start
+	d += " L "+(w2+len0158)+" "+(h2+len0041); // L3-End
+	d += "M "+(w2-len0158)+" "+(h2+len0183); // L4-Start
+	d += " L "+(w2+len0158)+" "+(h2+len0183); // L4-End
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = "none";
+	style.stroke = detailColor;
+	style["stroke-width"] = 1;
 	svg.appendChild(path);
 }
 
@@ -4618,32 +4920,6 @@ PolyLineEdge.arrowHead = function(svg, side, attributes) {
 		if(angleX < 0)
 			angle += 180;
 	}
-	
-	
-//	if(side == "source") {
-//		angleX = sideAttr.x - (px[0] || attributes.target.x);
-//		angleY = sideAttr.y - (py[0] || attributes.target.y);
-//	}
-//	else if(side == "target") {
-//		var len1 = px.length-1;
-//		angleX = sideAttr.x - (px[len1] || attributes.source.x);
-//		angleY = sideAttr.y - (py[len1] || attributes.source.y);
-//	}
-//	else
-//		return;
-//	arrowType = sideAttr.arrow || arrowType; // What the arrow type
-//	if(arrowType == "none")
-//		return;
-	// Calculate the rotation transform
-//	if(angleY == 0)
-//		angle = angleX > 0 ? 0 : 180;
-//	else if(angleX == 0)
-//		angle = angleY > 0 ? 90 : -90;
-//	else {
-//		angle = Math.atan(angleY/angleX) * (180 / Math.PI);
-//		if(angleX < 0)
-//			angle += 180;
-//	}
 	
 	var svgid = attributes.id+"-"+side+"-arrow";
 	var attr = {};
