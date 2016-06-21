@@ -8,6 +8,7 @@ yWorks.setSpecificClass(null, this["ShapeNode"]);
 yWorks.setSpecificClass(null, this["GenericNode"]);
 yWorks.setSpecificClass(null, this["SVGNode"]);
 yWorks.setSpecificClass(null, this["ProxyAutoBoundsNode"]);
+yWorks.setSpecificClass(null, this["TableNode"]);
 yWorks.setSpecificClass(null, this["PolyLineEdge"]);
 
 /**
@@ -666,13 +667,15 @@ yWorks.getLabels = function(attributes, xml) {
 		note.lineColor = note.hasLineColor ? label.getAttribute("lineColor") : "none";
 		
 		note.textAlign = label.getAttribute("alignment");
-		note.autoSizePolicy = label.getAttribute("autoSizePolicy");
-		note.modelName = label.getAttribute("modelName");
 		note.fontFamily = label.getAttribute("fontFamily");
 		note.fontSize = +label.getAttribute("fontSize");
 		note.fontStyle = label.getAttribute("fontStyle");
 		note.fontColor = label.getAttribute("textColor");
 		note.underlined = label.getAttribute("underlinedText") == "true";
+		
+		note.autoSizePolicy = label.getAttribute("autoSizePolicy");
+		note.modelName = label.getAttribute("modelName");
+		note.rotationAngle = +label.getAttribute("rotationAngle");
 		notes.push(note);
 	}
 }
@@ -719,6 +722,8 @@ yWorks.createLabels = function(attributes, container, contentClass) {
 			}
 			if(note.hasbackgroundColor)
 				style.backgroundColor = note.color1;
+			if(note.rotationAngle != 0)
+				style.transform = "rotate("+note.rotationAngle+"deg)";
 			style.visibility = note.visible ? "inherit" : "hidden";
 		}
 		container.appendChild(notediv);
@@ -1521,14 +1526,17 @@ ShapeNode.ellipseShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var ellipse = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
 	ellipse.setAttributeNS(null, "rx", w2);
 	ellipse.setAttributeNS(null, "ry", h2);
 	ellipse.setAttributeNS(null, "cx", w2 + 0.5);
 	ellipse.setAttributeNS(null, "cy", h2 + 0.5);
+	ellipse.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = ellipse.style;
-	style.fill = fill.color;
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -1551,6 +1559,8 @@ ShapeNode.rectangleShape = function(svg, shape, attr) {
 	var h = geometry.height, h2 = h/2;
 	var borderColor = borderStyle.borderColor;
 	var borderWidth = borderStyle.borderWidth;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
 	var rect = document.createElementNS(svgns, "rect"), style = null;
@@ -1562,9 +1572,9 @@ ShapeNode.rectangleShape = function(svg, shape, attr) {
 		rect.setAttributeNS(null, "rx", r);
 		rect.setAttributeNS(null, "ry", r);
 	}
-	rect.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderWidth));
+	rect.setAttributeNS(null, "stroke-dasharray", dashed);
 	style = rect.style;
-	style.fill = fill.color;
+	style.fill = color;
 	style.stroke = borderColor;
 	style["stroke-width"] = borderWidth;
 	
@@ -1577,6 +1587,7 @@ ShapeNode.rectangleShape = function(svg, shape, attr) {
 		points += " 0,1";
 		points += " "+w+",1";
 		polyline.setAttributeNS(null, "points", points);
+		polyline.setAttributeNS(null, "stroke-dasharray", dashed);
 		style = polyline.style;
 		style.fill = "none";
 		style["stroke-width"] = borderWidth;
@@ -1589,6 +1600,7 @@ ShapeNode.rectangleShape = function(svg, shape, attr) {
 		points += " "+w+","+h;
 		points += " "+w+",0";
 		polyline.setAttributeNS(null, "points", points);
+		polyline.setAttributeNS(null, "stroke-dasharray", dashed);
 		style = polyline.style;
 		style.fill = "none";
 		style["stroke-width"] = borderWidth;
@@ -1612,6 +1624,8 @@ ShapeNode.parallelogramShape = function(svg, shape, attr) {
 	var w = geometry.width;
 	var h = geometry.height;
 	var w10 = w/10;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	var d = "";
@@ -1620,9 +1634,9 @@ ShapeNode.parallelogramShape = function(svg, shape, attr) {
 	d += " L "+(w-w10)+" "+(h);
 	d += " L 0 "+(h)+" Z";
 	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = path.style;
-	style.fill = fill.color;
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -1644,6 +1658,8 @@ ShapeNode.hexagonShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w10 = w/10;
 	var h = geometry.height, h2 = h/2;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	var d = "";
@@ -1655,9 +1671,9 @@ ShapeNode.hexagonShape = function(svg, shape, attr) {
 	d += " L 0 "+(h2);
 	d += " L "+(w10)+" 0 Z";
 	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = path.style;
-	style.fill = fill.color;
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -1678,6 +1694,8 @@ ShapeNode.triangleShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	var d = "";
@@ -1686,9 +1704,9 @@ ShapeNode.triangleShape = function(svg, shape, attr) {
 	d += " L 0 "+(h);
 	d += " L "+(w2)+" 0 Z";
 	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = path.style;
-	style.fill = fill.color;
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -1709,31 +1727,29 @@ ShapeNode.trapezoidShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w4 = w/4;
 	var h = geometry.height;
-
-	var width = attr.width;
-	var height = attr.height;
-	var fourthWidth = width/4;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	var d = "";
 	if(shape.search("2") == -1) {
 		d += "M "+(w4)+" 0";
 		d += " L "+(w - w4)+" 0";
-		d += " L "+(w)+" "+height;
-		d += " L 0 "+height;
+		d += " L "+(w)+" "+(h);
+		d += " L 0 "+(h);
 		d += " L "+(w4)+" 0 Z";
 	}
 	else {
 		d += "M 0 0";
 		d += " L "+(w)+" 0";
-		d += " L "+(w - w4)+" "+height;
-		d += " L "+(w4)+" "+height;
+		d += " L "+(w - w4)+" "+(h);
+		d += " L "+(w4)+" "+(h);
 		d += " L 0 0 Z";
 	}
 	path.setAttributeNS(null, "d", d);
-	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
+	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = path.style;
-	style.fill = fill.color;
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -1754,6 +1770,8 @@ ShapeNode.octagonShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w3 = w/3, w23 = 2*w3;
 	var h = geometry.height, h3 = h/3, h23 = 2*h3;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"); // TODO: look at the octagon code in GenericNode
 	var d = "";
@@ -1769,7 +1787,7 @@ ShapeNode.octagonShape = function(svg, shape, attr) {
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
 	var style = path.style;
-	style.fill = fill.color;
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -1790,6 +1808,7 @@ ShapeNode.diamondShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	var d = "";
@@ -1801,7 +1820,7 @@ ShapeNode.diamondShape = function(svg, shape, attr) {
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
 	var style = path.style;
-	style.fill = fill.color;
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -1880,7 +1899,6 @@ GenericNode.switchConfiguration = function(configuration, attributes) {
 	var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 	if(!attributes)
 		return svg;
-	
 	
 	var geometry = attributes.geometry;
 	svg.setAttributeNS(null, "width", geometry.width+1);
@@ -4571,16 +4589,14 @@ ProxyAutoBoundsNode.prototype.getBounds = function() {
 	var group = attr.groups[attr.active];
 	var obj = {};
 	if(!group) { // TODO: unwarranted failsafe
-		obj.x = 0;
-		obj.y = 0;
-		obj.width = 0;
-		obj.height = 0;
+		obj = yWorksRepresentation.prototype.getBounds();
 	}
 	else {
-		obj.x = group.x;
-		obj.y = group.y;
-		obj.width = group.width;
-		obj.height = group.height;
+		var geometry = group.geometry;
+		obj.x = geometry.x;
+		obj.y = geometry.y;
+		obj.width = geometry.width;
+		obj.height = geometry.height;
 	}
 	return obj;
 }
@@ -4590,33 +4606,64 @@ ProxyAutoBoundsNode.prototype.getBounds = function() {
  * @override
  */
 ProxyAutoBoundsNode.prototype.setBounds = function(bounds, increment) {
-	var groups = this.data.groups;
+	var attr = this.data;
+	var group = attr.groups[attr.active];
+	if(!group)
+		return;
+	
+	var geometry = group.geometry;
 	if(increment) {
-		for(var i = 0, j = groups.length; i < j; i++) {
-			var group = groups[i];
-			if("x" in bounds)
-				group.x += bounds.x;
-			if("y" in bounds)
-				group.y += bounds.y;
-			if("width" in bounds)
-				group.width += bounds.width;
-			if("height" in bounds)
-				group.height += bounds.height;
-		}
+		if("x" in bounds)
+			geometry.x += bounds.x;
+		if("y" in bounds)
+			geometry.y += bounds.y;
+		if("width" in bounds)
+			geometry.width += bounds.width;
+		if("height" in bounds)
+			geometry.height += bounds.height;
 	}
 	else {
-		for(var i = 0, j = groups.length; i < j; i++) {
-			var group = groups[i];
-			if("x" in bounds)
-				group.x = bounds.x;
-			if("y" in bounds)
-				group.y = bounds.y;
-			if("width" in bounds)
-				group.width = bounds.width;
-			if("height" in bounds)
-				group.height = bounds.height;
-		}
+		if("x" in bounds)
+			geometry.x = bounds.x;
+		if("y" in bounds)
+			geometry.y = bounds.y;
+		if("width" in bounds)
+			geometry.width = bounds.width;
+		if("height" in bounds)
+			geometry.height = bounds.height;
 	}
+}
+
+/**
+ * na
+ */
+ProxyAutoBoundsNode.getInsets = function(attributes, xml) {
+	attributes.left = +xml.getAttribute("left");
+	attributes.leftF = +xml.getAttribute("leftF");
+	attributes.right = +xml.getAttribute("right");
+	attributes.rightF = +xml.getAttribute("rightF");
+	attributes.top = xml.getAttribute("top");
+	attributes.topF = +xml.getAttribute("topF");
+	attributes.bottom = xml.getAttribute("bottom");
+	attributes.bottomF = +xml.getAttribute("bottomF");
+}
+
+/**
+ * na
+ */
+ProxyAutoBoundsNode.getStateAndInsets = function(attributes, xml) {
+	var field = (attributes.state = {}), test = null;
+	var section = xml.getElementsByTagName("y:State")[0];
+	field.closed = section.getAttribute("closed") == "true";
+	field.closedHeight = +section.getAttribute("closedHeight");
+	field.closedWidth = +section.getAttribute("closedWidth");
+	if(test = section.getAttribute("innerGraphDisplayEnabled"))
+		field.innerGraphDisplayEnabled = test == "true";
+	if(test = section.getAttribute("autoResize"))
+		field.autoResize = test == "true";
+	
+	ProxyAutoBoundsNode.getInsets((attributes.insets = {}), xml.getElementsByTagName("y:Insets")[0]);
+	ProxyAutoBoundsNode.getInsets((attributes.borderInsets = {}), xml.getElementsByTagName("y:BorderInsets")[0]);
 }
 
 /**
@@ -4630,60 +4677,44 @@ ProxyAutoBoundsNode.prototype.readXML = function(xml) {
 	
 	var g;
 	g = xml.getElementsByTagName("y:Realizers")[0];
-	attributes.active = +g.getAttribute("active");
+	attributes.realizers = {};
+	attributes.realizers.active = +g.getAttribute("active");
 	
 	// GroupNodes
-	var groups = attributes.groups = [];
-	var gElems = g.getElementsByTagName("y:GroupNode");
+	var groups = attributes.groups = [], gElems = null;
+	gElems = g.getElementsByTagName("y:GroupNode");
 	for(var i = 0, j = gElems.length; i < j; i++) {
 		var group = {};
 		var gi = gElems[i];
 		yWorks.getCommonFields(group, gi);
 		yWorks.getLabels(group, gi);
-		
+		ProxyAutoBoundsNode.getStateAndInsets(group, gi);
 		var section = gi.getElementsByTagName("y:Shape")[0], field = null;
 		group.shape = section.getAttribute("type");
-		
-		field = (group.state = {});
-		section = gi.getElementsByTagName("y:State")[0];
-		field.closed = section.getAttribute("closed") == "true";
-		field.closedHeight = +section.getAttribute("closedHeight");
-		field.closedWidth = +section.getAttribute("closedWidth");
-		field.innerGraphDisplayEnabled = section.getAttribute("innerGraphDisplayEnabled") == "true";
-		
-		field = (group.insets = {});
-		section = gi.getElementsByTagName("y:Insets")[0];
-		field.left = +section.getAttribute("left");
-		field.leftF = +section.getAttribute("leftF");
-		field.right = +section.getAttribute("right");
-		field.rightF = +section.getAttribute("rightF");
-		field.top = section.getAttribute("top");
-		field.topF = +section.getAttribute("topF");
-		field.bottom = section.getAttribute("bottom");
-		field.bottomF = +section.getAttribute("bottomF");
-		
-		field = (group.borderInsets = {});
-		section = gi.getElementsByTagName("y:BorderInsets")[0];
-		field.left = +section.getAttribute("left");
-		field.leftF = +section.getAttribute("leftF");
-		field.right = +section.getAttribute("right");
-		field.rightF = +section.getAttribute("rightF");
-		field.top = section.getAttribute("top");
-		field.topF = +section.getAttribute("topF");
-		field.bottom = section.getAttribute("bottom");
-		field.bottomF = +section.getAttribute("bottomF");
-		
 		groups.push(group);
+	}
+	if(groups.length) {
+		attributes.nodeType = "GroupNodes";
+		return attributes;
 	}
 	
 	// GenericGroupNodes
-	// ...
-	
+	gElems = g.getElementsByTagName("y:GenericGroupNode");
+	for(var i = 0, j = gElems.length; i < j; i++) {
+		var group = {};
+		var gi = gElems[i];
+		yWorks.getCommonFields(group, gi);
+		yWorks.getLabels(group, gi);
+		yWorks.getStyleProperties(group, gi);
+		ProxyAutoBoundsNode.getStateAndInsets(group, gi);
+		groups.push(group);
+	}
+	attributes.nodeType = "GenericGroupNodes";
 	return attributes;
 }
 
 /**
- * Create an HTML component to represent this edge.
+ * Create an HTML component to represent this proxy auto-bound node.
  * @override
  */
 ProxyAutoBoundsNode.prototype.createElement = function(attr) {
@@ -4694,23 +4725,240 @@ ProxyAutoBoundsNode.prototype.createElement = function(attr) {
 	
 	var contentNode = null, style = null;
 	var groups = attr.groups;
-	var active = attr.active;
+	var active = attr.realizers.active;
 	for(var i = 0, j = groups.length; i < j; i++) {
 		var group = groups[i];
-		contentNode = document.createElement("div"), style = null;
-		contentNode.id = this.id+"-shape-"+i;
-		contentNode.className = "yWorks proxy shape";
-		style = contentNode.style;
-		style.left = group.x+"px";
-		style.top = group.y+"px";
-		style.width = group.width+"px";
-		style.height = group.height+"px";
-		if(i != active)
-			style.visibility = "hidden";
-		contentNode.appendChild( ShapeNode.switchShape(group.shape, group) ); // One part of the proxy auto-bounds is a shape like ShapeNode
-		containerNode.appendChild(contentNode);
+		if(attr.nodeType == "GroupNodes") {
+			var geometry = group.geometry;
+			
+			contentNode = document.createElement("div"), style = null;
+			contentNode.id = this.id+"-shape-"+i;
+			contentNode.className = "yWorks proxy shape";
+			style = contentNode.style;
+			style.left = geometry.x+"px";
+			style.top = geometry.y+"px";
+			style.width = geometry.width+"px";
+			style.height = geometry.height+"px";
+			if(i != active)
+				style.visibility = "hidden";
+			contentNode.appendChild( ShapeNode.switchShape(group.shape, group) ); // One part of the proxy auto-bounds is ShapeNode design
+			containerNode.appendChild(contentNode);
+		}
+		else
+			console.log("No graphics for "+attr.id+"; please construct proper "+attr.nodeType+" element");
+	}
+	return containerNode;
+}
+
+
+/**
+ * na
+ */
+TableNode.prototype = new yWorksRepresentation();
+TableNode.prototype.constructor = TableNode;
+function TableNode(id, attributes) {
+	yWorksRepresentation.call(this, id,attributes);
+}
+
+/**
+ * na
+ * returns {Boolean} true, if at least one of the measurements is a non-zero; false, otherwise
+ */
+TableNode.getInsets = function(attributes, xml) {
+	var left = attributes.left = +xml.getAttribute("left");
+	var right = attributes.right = +xml.getAttribute("right");
+	var top = attributes.top = +xml.getAttribute("top");
+	var bottom = attributes.bottom = +xml.getAttribute("bottom");
+	return !!(left || right || top || bottom);
+}
+
+/**
+ * na
+ */
+TableNode.prototype.readXML = function(xml) {
+	var attributes = {};
+
+	attributes.id = this.id;
+	attributes["foldertype"] = xml.getAttribute("yfiles.foldertype");
+	
+	var g;
+	g = xml.getElementsByTagName("y:TableNode")[0];
+	var field = null
+	yWorks.getCommonFields(attributes, g);
+	yWorks.getLabels(attributes, g);
+	yWorks.getStyleProperties(attributes, g);
+	ProxyAutoBoundsNode.getStateAndInsets(attributes, g); // Identical fields
+	attributes.configuration = g.getAttribute("configuration");
+	// Table
+	var table = attributes.table = {};
+	var tElem = g.getElementsByTagName("y:Table")[0];
+	TableNode.getInsets((table.defaultColumnInsets = {}), tElem.getElementsByTagName("y:DefaultColumnInsets")[0]);
+	TableNode.getInsets((table.defaultRowInsets = {}), tElem.getElementsByTagName("y:DefaultRowInsets")[0]);
+	TableNode.getInsets((table.insets = {}), tElem.getElementsByTagName("y:Insets")[0]);
+	
+	var gElems = null, fieldGroup = null, fields = null;
+	var numRows = 0, numCols = 0;
+	// Table columns
+	gElems = tElem.getElementsByTagName("y:Columns")[0];
+	fieldGroup = table.columns = [];
+	fields = gElems.getElementsByTagName("y:Column");
+	for(var i = 0, j = fields.length; i < j; i++) {
+		var obj = {};
+		var field = fields[i];
+		obj.id = field.getAttribute("id");
+		obj.width = +field.getAttribute("width");
+		obj.minimumWidth = +field.getAttribute("minimumWidth");
+		if( TableNode.getInsets((obj.insets = {}), field.getElementsByTagName("y:Insets")[0]) )
+			numCols++;
+		fieldGroup.push(obj);
+	}
+	// Table rows
+	gElems = tElem.getElementsByTagName("y:Rows")[0];
+	fieldGroup = table.rows = [];
+	fields = gElems.getElementsByTagName("y:Row");
+	for(var i = 0, j = fields.length; i < j; i++) {
+		var obj = {};
+		var field = fields[i];
+		obj.id = field.getAttribute("id");
+		obj.height = +field.getAttribute("height");
+		obj.minimumHeight = +field.getAttribute("minimumHeight");
+		if( TableNode.getInsets((obj.insets = {}), field.getElementsByTagName("y:Insets")[0]) )
+			numRows++;
+		fieldGroup.push(obj);
+	}
+	table.numberOfColumns = numCols;
+	table.numberOfRows = numRows;
+	return attributes;
+}
+
+/**
+ * Create an HTML component to represent this table.
+ * @override
+ */
+TableNode.prototype.createElement = function(attr) {
+	attr = attr || this.data;
+	var geometry = attr.geometry;
+	var fill = attr.fill;
+	var borderStyle = attr.borderStyle1;
+	var styleProperties = attr.styleProperties;
+	var w = geometry.width;
+	var h = geometry.height;
+	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
+	
+	var containerNode = Representation.prototype.createElement.call(this, attr), style = null;
+	containerNode.className = "yWorks table";
+	
+	var contentNode = document.createElement("div"), style = null;
+	contentNode.id = attr.id+"-shape";
+	contentNode.className = "yWorks table shape";
+	style = contentNode.style;
+	style.left = geometry.x+"px";
+	style.top = geometry.y+"px";
+	style.width = w+"px";
+	style.height = h+"px";
+	containerNode.appendChild(contentNode);
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var svg = document.createElementNS(svgns, "svg");
+	svg.setAttributeNS(null, "width", w);
+	svg.setAttributeNS(null, "height", h);
+	contentNode.appendChild(svg);
+	
+	var rect = document.createElementNS(svgns, "rect"); // Primary frame
+	rect.setAttributeNS(null, "width", w);
+	rect.setAttributeNS(null, "height", h);
+	rect.setAttributeNS(null, "stroke-dasharray", dashed);
+	style = rect.style;
+	style.fill = fill.color;
+	style.stroke = borderStyle.borderColor;
+	style["stroke-width"] = borderStyle.borderWidth;
+	svg.appendChild(rect);
+	
+	var table = attr.table;
+	var rows = table.rows;
+	var columns = table.columns;
+	var numberOfRows = table.numberOfRows;
+	var numberOfColumns = table.numberOfColumns;
+	var lanesAsColumns = styleProperties["yed.table.lane.style"] == "lane.style.columns";
+	var rowHeaderColorMain = styleProperties["yed.table.header.color.main"];
+	var rowHeaderColorAltr = styleProperties["yed.table.header.color.alternating"];
+	var colHeaderColorMain = styleProperties["yed.table.section.color"];
+	var colHeaderColorAltr = styleProperties["yed.table.section.color"];
+	var laneColorMain = styleProperties["yed.table.lane.color.main"];
+	var laneColorAltr = styleProperties["yed.table.lane.color.alternating"];
+	if(lanesAsColumns) {
+		colLaneColorMain = colHeaderColorMain; // Temporary, for swapping
+		colHeaderColorMain = rowHeaderColorMain;
+		colHeaderColorAltr = rowHeaderColorAltr;
+		rowHeaderColorMain = colLaneColorMain;
+		rowHeaderColorAltr = colLaneColorMain;
 	}
 	
+	var x = 0;
+	var y = table.insets.top;
+	var rect = null, style = null;
+	// Column headers?
+	var h = table.defaultColumnInsets.top;
+	if(numberOfRows)
+		x += table.defaultRowInsets.left;
+	for(var i = 0; i < numberOfColumns; i++) {
+		var col = columns[i];
+		rect = document.createElementNS(svgns, "rect");
+		rect.setAttributeNS(null, "x", x);
+		rect.setAttributeNS(null, "y", y);
+		rect.setAttributeNS(null, "width", col.width);
+		rect.setAttributeNS(null, "height", h);
+		rect.setAttributeNS(null, "stroke-dasharray", dashed);
+		style = rect.style;
+		style.fill = (i%2 ? colHeaderColorAltr : colHeaderColorMain);
+		style.stroke = borderStyle.borderColor;
+		style["stroke-width"] = borderStyle.borderWidth;
+		svg.appendChild(rect);
+		x += col.width;
+	}
+	y += h;
+	x = 0;
+	// Row leaders?
+	var w = table.defaultRowInsets.left;
+	for(var i = 0, dy = y; i < numberOfRows; i++) {
+		var row = rows[i];
+		rect = document.createElementNS(svgns, "rect");
+		rect.setAttributeNS(null, "x", x);
+		rect.setAttributeNS(null, "y", dy);
+		rect.setAttributeNS(null, "width", w);
+		rect.setAttributeNS(null, "height", row.height);
+		rect.setAttributeNS(null, "stroke-dasharray", dashed);
+		style = rect.style;
+		style.fill = (i%2 ? rowHeaderColorAltr : rowHeaderColorMain);
+		style.stroke = borderStyle.borderColor;
+		style["stroke-width"] = borderStyle.borderWidth;
+		svg.appendChild(rect);
+		dy += row.height;
+	}
+	x += w;
+	// Rows and columns
+	for(var i1 = 0; i1 < rows.length; i1++) {
+		var row = rows[i1];
+		var dx = x;
+		for(var i2 = 0, j2 = columns.length; i2 < j2; i2++) {
+			var col = columns[i2];
+			rect = document.createElementNS(svgns, "rect");
+			rect.setAttributeNS(null, "x", dx);
+			rect.setAttributeNS(null, "y", y);
+			rect.setAttributeNS(null, "width", col.width);
+			rect.setAttributeNS(null, "height", row.height);
+			rect.setAttributeNS(null, "stroke-dasharray", dashed);
+			style = rect.style;
+			style.fill = (lanesAsColumns ? i2 % 2 : i1 % 2) ? laneColorAltr : laneColorMain;
+			style.stroke = borderStyle.borderColor;
+			style["stroke-width"] = borderStyle.borderWidth;
+			svg.appendChild(rect);
+			dx += col.width;
+		}
+		y += row.height;
+	}
+	
+	yWorks.createLabels(attr, containerNode);
 	return containerNode;
 }
 

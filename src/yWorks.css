@@ -109,6 +109,18 @@
 	position:absolute;
 }
 
+/* TableNode */
+.yWorks.table { }
+
+.yWorks.table.shape {
+	/*same as yWorks.shape.frame*/
+	left:0px;
+	top:0px;
+	width:100%;
+	height:100%;
+	position:absolute;
+}
+
 /* PolyEdgeLine */
 .yWorks.line {
 	position:absolute;
