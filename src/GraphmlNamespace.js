@@ -24,13 +24,6 @@ GraphmlNamespace.get = function(schema) {
  * @property {Object} classList - a mapping of namespace-scoped classes
  * @property {String} s in classList - the name of a class
  * @property {Function} classList[s] - the constructor for the class
- * @property {Object} interactions - a mapping of cross-namespace code that allows for interaction between different objects
- * @property {String} objA in interactions - the name of a class scoped to our namespace
- * @property {Object} interactions[objA] - a mapping that contains references to other namespaces
- * @property {String} nsB in interactions[objA] - the unique identifier of another namespace
- * @property {Object} interactions[objA][nsB] - a mapping between other namespaces and specific objects in that other namespace
- * @property {String} objB in interactions[objA][nsB] - the name of a class scoped to the other namespace
- * @property {Function} interactions[objA][nsB][objB] - the code that handles the interaction between the classes
  * @property {Boolean} isScoped - whether or not this namespace is available (scoped) to other elements in this environment
  * @constructor
  * @param {String} schema - the unique identifier that belongs to this namespace
@@ -43,7 +36,6 @@ A class is scoped when it is added to a namespace.  Class scoping is neither str
 function GraphmlNamespace(schema, unscoped) {
 	this.schema = schema;
 	this.classList = {};
-	this.interactions = {};
 	this.isScoped = false;
 	
 	if(!unscoped) {
@@ -190,104 +182,6 @@ GraphmlNamespace.prototype.setSpecificClass = function(name, newClass) {
 	var oldClass = existingClasses[name];
 	existingClasses[name] = newClass;
 	return true;
-}
-
-/*
-namespace A {
-	A.interactions {
-		A.class1 {
-			namespace B {
-				B.class1 : func1
-				B.class2 : func2
-			}
-			namespace C {
-				C.class : func3
-			}
-		}
-		A.class2 {
-			namespace B {
-				B.class3 : func4
-			}
-		}
-	}
-}
-*/
-/**
- * na
- * @returns {Object} a mapping of cross-namespace code that allows for interaction between different objects
- */
-GraphmlNamespace.prototype.getInteractions = function() {
-	return this.interactions;
-}
-/**
- * na
- * @param {Object} interactions - a mapping of cross-namespace code that allows for interaction between different objects
- */
-GraphmlNamespace.prototype.setInteractions = function(interactions) {
-	var existingInteractions = this.interactions;
-	var existingClassList = this.classList;
-	var schema = this.schema;
-	for(var objA in interactions) {
-		if(!(objA in existingClassList)) { // Perform checks
-			console.log("Namespace "+schema+": can not set an interaction since "+objA+" is not part of existing scoped namespace");
-			continue;
-		}
-		var interact = interactions[objA];
-		for(var nsB in interact) {
-			var namespace = GraphmlNamespace.get(nsB);
-			if(!namespace) {
-				console.log("Namespace "+schema+": can not set an interaction for "+objA+" as "+nsB+" is not a valid scoped namespace");
-				continue;
-			}
-			interact = interact[nsB];
-			for(var objB in interact) {
-				if(!namespace.getSpecificClass(objB)) {
-					console.log("Namespace "+schema+": can not set an interaction for "+objA+" because "+nsB+":"+objB+" can not be found");
-					continue;
-				}
-				
-				// Set interaction association
-				var cat = null;
-				cat = (existingInteractions[objA] = existingInteractions[objA] || {});
-				cat = (cat[nsB] = cat[nsB] || {});
-				cat[objB] = interact[objB];
-			}
-		}
-	}
-}
-
-/**
- * na
- * @param {String} objA - the name of a class in this namespace
- * @param {String} nsB - the other namespace
- * @param {String} objB - the name of a class in the other namespace
- * @returns {Function} a function that determines the interaction of this namespace's class with another namespace's class, or null if there is none defined
- */
-GraphmlNamespace.prototype.getSpecificInteraction = function(objA, nsB, objB) {
-	var list = null;
-	list = this.interactions[objA];
-	if(list) {
-		list = list[nsB];
-		if(list)
-			return list[objB];
-	}
-	return null;
-}
-
-/**
- * na
- * @param {String} objA - the name of a class in this namespace
- * @param {String} nsB - the other namespace
- * @param {String} objB - the name of a class in the other namespace
- * @param {Function} func - a function that determines the interaction of this namespace's class with another namespace's class
- */
-GraphmlNamespace.prototype.setSpecificInteraction = function(objA, nsB, objB, func) {
-	var interaction = {}, entry = null;
-	entry = (interaction[objA] = {});
-	entry = (entry[nsB] = {});
-	entry[objB] = func;
-	
-	this.setInteractions(interaction);
 }
 
 /**
