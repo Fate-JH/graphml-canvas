@@ -559,38 +559,28 @@ yWorks.zoom = function(factor) {
  * @protected
  * @static
  * @param {Object} attributes - contains the data pertinent to this element
- * @param {Number} attributes.x - na
- * @param {Number} attributes.y - na
- * @param {Number} attributes.width - na
- * @param {Number} attributes.height - na
- * @param {String} attributes.bgColor - na
- * @param {String} attributes.color2 - na
- * @param {String} attributes.transparent - na
- * @param {String} attributes.borderColor - na
- * @param {String} attributes.borderStyle - na
- * @param {Number} attributes.borderWidth - na
  * @param {XML} xml - the original markup of this element
  */
 yWorks.getCommonFields = function(attributes, xml) {
 	var g;
 	g = xml.getElementsByTagName("y:Geometry")[0];
 	attributes.geometry = {};
-	attributes.geometry.x = attributes.x = +g.getAttribute("x");
-	attributes.geometry.y = attributes.y = +g.getAttribute("y");
-	attributes.geometry.width = attributes.width = +g.getAttribute("width");
-	attributes.geometry.height = attributes.height = +g.getAttribute("height");
+	attributes.geometry.x = +g.getAttribute("x");
+	attributes.geometry.y = +g.getAttribute("y");
+	attributes.geometry.width = +g.getAttribute("width");
+	attributes.geometry.height = +g.getAttribute("height");
 	g = xml.getElementsByTagName("y:Fill")[0];
 	attributes.fill = {};
 	attributes.fill.hasColor = g.getAttribute("hasColor") == "true";
-	attributes.fill.color = attributes.bgColor = g.getAttribute("color");
-	attributes.fill.color2 = attributes.color2 = g.getAttribute("color2");
-	attributes.fill.transparent = attributes.transparent = g.getAttribute("transparent") == "true";
+	attributes.fill.color = g.getAttribute("color");
+	attributes.fill.color2 = g.getAttribute("color2");
+	attributes.fill.transparent = g.getAttribute("transparent") == "true";
 	g = xml.getElementsByTagName("y:BorderStyle")[0];
 	attributes.borderStyle1 = {};
 	attributes.borderStyle1.hasColor = g.getAttribute("hasColor") == "true";
-	attributes.borderStyle1.borderColor = attributes.borderColor = g.getAttribute("color") || "none";
-	attributes.borderStyle1.borderStyle = attributes.borderStyle = g.getAttribute("type");
-	attributes.borderStyle1.borderWidth = attributes.borderWidth = +g.getAttribute("width");
+	attributes.borderStyle1.borderColor = g.getAttribute("color") || "none";
+	attributes.borderStyle1.borderStyle = g.getAttribute("type");
+	attributes.borderStyle1.borderWidth = +g.getAttribute("width");
 }
 
 /**
@@ -645,8 +635,8 @@ yWorks.getLabels = function(attributes, xml) {
 	if(!attributes.notes)
 		notes = attributes.notes = [];
 	
-	var x = attributes.x;
-	var y = attributes.y;
+	var x = attributes.geometry.x;
+	var y = attributes.geometry.y;
 	var labels = xml.getElementsByTagName("y:NodeLabel");
 	for(var i = 0, j = labels.length; i < j; i++) {
 		var label = labels[i];
@@ -789,7 +779,7 @@ yWorks.createSVGLinePattern = function(type, stroke) {
 yWorks.setupLinearGradient = function(svg, attributes) {
 	var svgns = "http://www.w3.org/2000/svg";
 	
-	var attr = attributes || {}; // Try to collect information about the gradient from the attribute.
+	attr = attributes || {}; // Try to collect information about the gradient from the attribute.
 	var id = attr.id || (attr.elem ? attr.elem.id+"_gradient" : null);
 	var w = attr.width;
 	var h = attr.height;
@@ -1100,29 +1090,26 @@ yWorksRepresentation.prototype.getBounds = function() {
 yWorksRepresentation.prototype.setBounds = function(bounds, increment) {
  	bounds = bounds || {};
 	var attr = this.data;
+	var geometry = attr.geometry;
 	if(increment) {
 		if("x" in bounds)
-			attr.x += bounds.x;
+			geometry.x += bounds.x;
 		if("y" in bounds)
-			attr.y += bounds.y;
+			geometry.y += bounds.y;
 		if("width" in bounds)
-			attr.width += bounds.width;
+			geometry.width += bounds.width;
 		if("height" in bounds)
-			attr.height += bounds.height;
-		attr.geometry.x = attr.x;
-		attr.geometry.y = attr.y;
-		attr.geometry.width = attr.width;
-		attr.geometry.height = attr.height;
+			geometry.height += bounds.height;
 	}
 	else {
 		if("x" in bounds)
-			attr.geometry.x = attr.x = bounds.x;
+			geometry.x = bounds.x;
 		if("y" in bounds)
-			attr.geometry.y = attr.y = bounds.y;
+			geometry.y = bounds.y;
 		if("width" in bounds)
-			attr.geometry.width = attr.width = bounds.width;
+			geometry.width = bounds.width;
 		if("height" in bounds)
-			attr.geometry.height = attr.height = bounds.height;
+			geometry.height = bounds.height;
 	}
 }
 
@@ -2224,8 +2211,8 @@ GenericNode.createFlowChartCircle = function(svg, configuration, attr) {
 	var ellipse = document.createElementNS(svgns, "ellipse"), style = null;
 	ellipse.setAttributeNS(null, "rx", rx); // It's a circle that is typically longer than it is wide
 	ellipse.setAttributeNS(null, "ry", ry);
-	ellipse.setAttributeNS(null, "cx", w + 0.5);
-	ellipse.setAttributeNS(null, "cy", h + 0.5);
+	ellipse.setAttributeNS(null, "cx", w2 + 0.5);
+	ellipse.setAttributeNS(null, "cy", h2 + 0.5);
 	ellipse.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
 	style = ellipse.style;
 	style.fill = color;
@@ -2431,7 +2418,7 @@ GenericNode.createFlowChartShavedCornerRectangle = function(svg, configuration, 
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = path.style;
-	style.fill = "none";
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	svg.appendChild(path);
@@ -2484,7 +2471,7 @@ GenericNode.createFlowChartShavedSideRectangle = function(svg, configuration, at
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = path.style;
-	style.fill = "none";
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -2519,7 +2506,7 @@ GenericNode.createFlowChartAngledTopRectangle = function(svg, configuration, att
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = path.style;
-	style.fill = "none";
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -2569,7 +2556,7 @@ GenericNode.createFlowChartCurvedRectangle = function(svg, configuration, attr) 
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	var style = path.style;
-	style.fill = "none";
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -2615,7 +2602,7 @@ GenericNode.createFlowChartCurvedSideRectangle = function(svg, configuration, at
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", dashed);
 	style = path.style;
-	style.fill = color
+	style.fill = color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	svg.appendChild(path);
@@ -2954,8 +2941,8 @@ GenericNode.createEntityAttribute = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
 	var borderStyle = attr.borderStyle1 || attr;
-	var w = geometry.width, w2 = w/2, cx = w2 + 0.5;
-	var h = geometry.height, h2 = h/2, cy = h2 + 0.5;
+	var w = geometry.width, w2 = w/2, cx = w2 + 0.5, rx = w2;
+	var h = geometry.height, h2 = h/2, cy = h2 + 0.5, ry = h2;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
