@@ -10,36 +10,37 @@ if(!document.namespaces) {
 
 /**
  * Find a namespace by schema that is within a given scope
- * @param {String} schema - the unique identifier of a namespace
- * @return {GraphmlNamespace} a scoped namespace with the same identifier
+ * @static
+ * @param {String} uri - a unique namespace URI
+ * @return {GraphmlNamespace} a scoped namespace object with the same identifier
  */
-GraphmlNamespace.get = function(schema) {
-	return document.namespaces[schema];
+GraphmlNamespace.get = function(uri) {
+	return document.namespaces[uri];
 }
 
 
 /**
  * A namespace for specific graphml classes and functionality
- * @property {String} schema - the unique identifier that belongs to this namespace
+ * @property {String} uri - a namespace URI
  * @property {Object} classList - a mapping of namespace-scoped classes
  * @property {String} s in classList - the name of a class
  * @property {Function} classList[s] - the constructor for the class
  * @property {Boolean} isScoped - whether or not this namespace is available (scoped) to other elements in this environment
  * @constructor
- * @param {String} schema - the unique identifier that belongs to this namespace
+ * @param {String} uri - the unique namespace URI
  * @param {Boolean} unscoped - optional; if evaluated to false, add this namespace to the scope upon creation
  */
 /*
 A namespace is scoped when it is available in a particular environment, i.e., the document.
 A class is scoped when it is added to a namespace.  Class scoping is neither strict nor reflexive.
 */
-function GraphmlNamespace(schema, unscoped) {
-	this.schema = schema;
+function GraphmlNamespace(uri, unscoped) {
+	this.uri = uri;
 	this.classList = {};
 	this.isScoped = false;
 	
 	if(!unscoped) {
-		if(!GraphmlNamespace.get(schema))
+		if(!GraphmlNamespace.get(uri))
 			this.scope();
 		else
 			console.log("Namespace: not allowed to scope a new namespace that already is defined within the same scope - "+schema);
@@ -54,43 +55,43 @@ function GraphmlNamespace(schema, unscoped) {
 GraphmlNamespace.prototype.scope = function(overwrite) {
 	if(!this.isScoped) {
 		var namespaces = document.namespaces;
-		var schema = this.schema;
-		if(!namespaces[schema]) { // Not yet scoped
-			namespaces[schema] = this;
+		var uri = this.uri;
+		if(!namespaces[uri]) { // Not yet scoped
+			namespaces[uri] = this;
 			this.isScoped = true;
 		}
-		else if(namespaces[schema] === this) { // Already scoped
-			console.log("Namespace "+this.schema+": already scoped");
+		else if(namespaces[uri] === this) { // Already scoped
+			console.log("Namespace "+uri+": already scoped");
 			this.isScoped = true;
 			return true;
 		}
 		else { // Check if can be scoped
-			var oldNamespace = namespaces[schema];
+			var oldNamespace = namespaces[uri];
 			var willScope = true;
-			if(oldNamespace) { // Existing namespace with same schema; can we descope it?
-				console.log("Namespace: existing namespace already found scoped under the schema "+this.schema);
+			if(oldNamespace) { // Existing namespace; can we descope it?
+				console.log("Namespace: existing namespace already found scoped under the schema "+this.uri);
 				if(!!overwrite)
 					willScope = oldNamespace.descope();
 			}
 			if(willScope) {
-				namespaces[schema] = this;
+				namespaces[uri] = this;
 				this.isScoped = true;
 			}
 		}
 	}
 	
 	if(this.isScoped)
-		console.log("Namespace "+this.schema+": adding oneself to the current scope");
+		console.log("Namespace "+this.uri+": adding oneself to the current scope");
 	return this.isScoped;
 }
 
 /**
- * Remove this namespace to the current scope
+ * Remove this namespace from the current scope
  * @returns {Boolean} true, always (may change later)
  */
 GraphmlNamespace.prototype.descope = function() {
-	console.log("Namespace "+this.schema+": removing oneself from current scope");
-	delete document.namespaces[this.schema];
+	console.log("Namespace "+this.uri+": removing oneself from current scope");
+	delete document.namespaces[this.uri];
 	this.isScoped = false;
 	return true;
 }
@@ -104,33 +105,33 @@ GraphmlNamespace.prototype.getScope = function() {
 }
  
 /**
- * Return the schema for this namespace
- * @returns {String} the unique identifier that belongs to this namespace
+ * Return the URI for this namespace
+ * @returns {String} the unique identifying URI that belongs to this namespace
  */
-GraphmlNamespace.prototype.getSchema = function() {
-	return this.schema;
+GraphmlNamespace.prototype.getNamespaceURI = function() {
+	return this.uri;
 }
 
 /**
- * Give this namespace a new schema, if conditions allow
- * @property {String} schema - the unique identifier that belongs to this namespace
+ * Give this namespace a new URI, if conditions allow
+ * @property {String} uri - the unique namespace URI
  * @returns {Boolean} true, if this namespace has the new schema; false, otherwise
  */
-GraphmlNamespace.prototype.setSchema = function(schema) {
-	var oldSchema = this.schema;
-	if(oldSchema == schema)
+GraphmlNamespace.prototype.setNamespaceURI = function(uri) {
+	var oldURI = this.uri;
+	if(oldURI == uri)
 		return true;
 	
 	if(this.isScoped) {
 		var namespaces = document.namespaces;
-		if(namespaces[schema]) {
-			console.log("GraphmlNamespace "+oldSchema+": not allowed to change to a schema that already specifies another namespace within this scope");
+		if(namespaces[uri]) {
+			console.log("GraphmlNamespace "+oldURI+": not allowed to change to a namespace that already specifies another namespace within this scope");
 			return false;
 		}
-		namespaces[schema] = namespaces[oldSchema];
-		delete namespaces[oldSchema];
+		namespaces[ns] = namespaces[oldURI];
+		delete namespaces[oldURI];
 	}
-	this.schema = schema;
+	this.uri = uri;
 	return true;
 }
 
@@ -211,7 +212,7 @@ GraphmlNamespace.prototype.equals = function(o) {
 		if((typeof(this) != otype) || (this.constructor != o.constructor))
 			return false;
 	
-		return this.schema == o.getSchema();
+		return this.uri == o.getNamespaceURI();
 	}
 	return false;
 }
@@ -227,7 +228,7 @@ GraphmlNamespace.prototype.toString = function() {
 		classListString += classList[id].name+",";
 	}
 	
-	var output = "{namespace: "+this.schema+", status: "+(this.isScoped ? "scoped" : "unscoped")+", classes["+classListLen+"]";
+	var output = "{namespace: "+this.uri+", status: "+(this.isScoped ? "scoped" : "unscoped")+", classes["+classListLen+"]";
 	if(classListLen)
 		output += "=["+classListString.slice(0,(classListLen-1))+"]"
 	output += "}";

@@ -100,12 +100,20 @@
 /* ProxyAutoBoundsNode */
 .yWorks.proxy { }
 
+.yWorks.proxy.child { }
+
 .yWorks.proxy.shape {
 	/*same as yWorks.shape.frame*/
 	left:0px;
 	top:0px;
 	width:100%;
 	height:100%;
+	position:absolute;
+}
+
+.yWorks.proxy.stateBox {
+	left:0px;
+	top:0px;
 	position:absolute;
 }
 

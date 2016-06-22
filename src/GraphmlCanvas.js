@@ -429,7 +429,9 @@ GraphmlCanvas.prototype.load = function(url) {
 		xhr.addEventListener("error", this.transferFailed.bind(this));
 		xhr.addEventListener("abort", this.transferCanceled.bind(this));
 		xhr.open("get", url, true);
-		xhr.responseType = "text/plain";
+		//xhr.setRequestHeader('Content-Type', 'text/xml');
+		//xhr.overrideMimeType('text/xml');
+		xhr.responseType = "text/xml";
 		xhr.send();
 	}
 	else
@@ -477,8 +479,10 @@ GraphmlCanvas.prototype.transferCanceled = function(evt) {
  * @param {?} evt.originalTarget - the original request object
  */
 GraphmlCanvas.prototype.transferComplete = function(evt) {
-	var xhr = evt.originalTarget;
+	var xhr = evt.currentTarget || evt.originalTarget || evt.srcElement;
 	var xml = xhr.responseXML;
+	if(!xml && xhr.responseText)
+		xml = new DOMParser().parseFromString(xhr.responseText, 'text/xml');
 	if(xml) {
 		console.log("The transfer is complete.");
 		this.readXML(xml);
@@ -514,13 +518,11 @@ GraphmlCanvas.prototype.readXML = function(xml) {
  * @returns {XML} markup data only specific to the first graphml structure provided in the xml data, or null if none can be found
  */
 GraphmlCanvas.header = function(xml) {
-	var g = xml;
+	var g = xml.getElementsByTagName("graphml");
 	if(!g) {
 		console.log("Error when parsing file data - there is no data");
 		return null;
 	}
-	if(g.tagName != "graphml")
-		g = xml.getElementsByTagName("graphml");
 	if(!g.length) {
 		console.log("Error when parsing file data - there is no header");
 		return null;
@@ -531,7 +533,7 @@ GraphmlCanvas.header = function(xml) {
 }
 
 /**
- * Confirm that the content we have been passed is acceptable graphml data by checking the schema in the header
+ * Confirm that the content we have been passed is acceptable graphml data by checking the header
  * @private
  * @param {XML} xml - the structured data in xml format, starting at the header
  * @returns {Boolean} true, if the required graphml namespaces are properly set up; false, otherwise
@@ -541,21 +543,21 @@ GraphmlCanvas.prototype.validateRequiredNamespaces = function(xml) {
 	
 	var xmlns = "http://graphml.graphdrawing.org/xmlns";
 	var g = xml;
-	var schema = g.getAttribute("xmlns");
-	if(!schema || schema != xmlns) {
-		console.log("Error when parsing file data - namespace is wrong for graphml data");
+	var uri = g.getAttribute("xmlns");
+	if(!uri || uri != xmlns) {
+		console.log("Error when parsing file data - namespace URI is wrong for graphml data");
 		return false;
 	}
-	// Optional schema definition(s)
-	schema = g.getAttribute("xmlns:xsi");
-	if(schema) {
-		if(schema.indexOf("http://www.w3.org/2001/XMLSchema-instance") == -1) {
-			console.log("Error when parsing file data - schema is wrong for graphml data");
+	// Optional namespace schema URI(s)
+	uri = g.getAttribute("xmlns:xsi");
+	if(uri) {
+		if(uri.indexOf("http://www.w3.org/2001/XMLSchema-instance") == -1) {
+			console.log("Error when parsing file data - URI is wrong for graphml data");
 			return false;
 		}
-		schema = g.getAttribute("xsi:schemaLocation"); // The optional schema location can contain many entries; for the moment, one of these two will be accepted
-		if(schema ? (schema.indexOf(xmlns) == -1 && schema.indexOf("http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd") == -1) : false) {
-			console.log("Error when parsing file data - schema is wrong for graphml data");
+		uri = g.getAttribute("xsi:schemaLocation"); // The optional location can contain many entries; for the moment, one of these two will be accepted
+		if(uri ? (uri.indexOf(xmlns) == -1 && uri.indexOf("http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd") == -1) : false) {
+			console.log("Error when parsing file data - URI is wrong for graphml data");
 			return false;
 		}
 	}
@@ -563,12 +565,12 @@ GraphmlCanvas.prototype.validateRequiredNamespaces = function(xml) {
 }
 
 /**
- * Recover the paired references and namespaces from the grapml content's header
+ * Recover the paired prefix and namespaces from the grapml content's header
  * @private
  * @param {XML} xml - the structured data in xml format, starting at the header
  * @returns {Object} namespaces - an object populated by the information on all supported namespaces in this file
- * @returns {String} id in namespaces - the reference tag that points to a namespace schema
- * @returns {Array[String]} namespaces[id] - an Array of namespace schema associated with this reference tag
+ * @returns {String} id in namespaces - the prefix URI that references a namespace
+ * @returns {Array[String]} namespaces[id] - an Array of namespace URI associated to namespaces
  */
 GraphmlCanvas.prototype.extractHeaderNamespaces = function(xml) {
 	var g = xml;
@@ -637,12 +639,12 @@ GraphmlCanvas.prototype.nodeListToArray = function(nodeList, namespaces, arrayLi
 }
 
 /**
- * Find a valid namespaced class object that will be created for this element from the header definition of the tag elements
+ * Find a valid namespaced class object that will be created for this element from the header definition of the prefix.
  * @private
  * @param {XML} elem - an isolated graphml node
  * @param {Object} namespaces - the namespaces that were defined in the header of the file for this structured data
  * @returns {Object} o - the paired namespace and cited object type from that schema that will be used to depict the node's data
- * @returns {String} o.namespace - the namespace schema
+ * @returns {String} o.namespace - the namespace prefix
  * @returns {String} o.representation - the object type to be found in that namespace
  */
 GraphmlCanvas.prototype.pairNamespaceFromHeader = function(elem, namespaces) {
@@ -650,15 +652,15 @@ GraphmlCanvas.prototype.pairNamespaceFromHeader = function(elem, namespaces) {
 		return null;
 	var children = elem.children;
 	for(var i = 0, j = children.length; i < j; i++) {
-		var tagName = children[i].tagName; // The namespaced tag will be of the format "UID:OBJECT_TYPE," split into "UID" and "OBJECT_TYPE"
+		var tagName = children[i].tagName; // The namespaced tag will be of the format "PREFIX:OBJECT_TYPE," split into "PREFIX" and "OBJECT_TYPE"
 		 var promotedTagName = tagName.charAt(0).toUpperCase() + tagName.slice(1, tagName.length);
 		if(GraphmlNamespace.get("http://graphml.graphdrawing.org/xmlns").getSpecificClass(promotedTagName)) // If we encounter a core graphml node, skip over it
 			continue;
 		
 		var tags = tagName.split(":");
 		if(tags[0] in namespaces) {
-			var schema = namespaces[tags[0]]; // The UID will point to a schema defined in this graph
-			return {namespace:schema, representation:tags[1].slice(0)};
+			var prefix = namespaces[tags[0]]; // The PREFIX will point to a namespace defined in this graph
+			return {namespace:prefix, representation:tags[1].slice(0)};
 		}
 		
 		if(children[i].children.length) { // Exhaustive :/
@@ -671,7 +673,7 @@ GraphmlCanvas.prototype.pairNamespaceFromHeader = function(elem, namespaces) {
 }
 
 /**
- * Take the extracted graphml data stored as lists and construct actual objects with appropriate visual Representions.
+ * Take the extracted graphml data stored as lists and construct objects with appropriate visual Representions.
  * Also, call setup on all of the include namespaces.
  * @private
  * @param {GraphPaper} graph - na
@@ -698,12 +700,12 @@ GraphmlCanvas.prototype.prepareElements = function(graph, structures, xml) {
 			var entryNamespace = "";
 			var entryRepresentation = null;
 			for(var i3 = 0, j3 = entry.namespace.length; i3 < j3; i3++) {
-				var entrySchema = entry.namespace[i3];
-				entryNamespace = GraphmlNamespace.get(entrySchema);
+				var entryPrefix = entry.namespace[i3];
+				entryNamespace = GraphmlNamespace.get(entryPrefix);
 				if(entryNamespace) {
 					entryRepresentation = entryNamespace.getSpecificClass(entry.representation); // This is the specific namespace representation of the data
-					if(!graph.getNamespace(entrySchema)) { // We don't want to allocate a used namespace more than once
-						graph.setNamespace(entrySchema, entryNamespace)
+					if(!graph.getNamespace(entryPrefix)) { // We don't want to allocate a used namespace more than once
+						graph.setNamespace(entryPrefix, entryNamespace)
 						usedNamespaces.push(entryNamespace);
 					}
 					break;

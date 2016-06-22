@@ -414,11 +414,12 @@ yWorks.linearIntersect = function(ax, ay, bx, by, cx, cy, dx, dy) {
  * @param {XML} data - the original graphml data
  */
 yWorks.allocateSVGResources = function(graph, xml) {
-	var resourceGroup = xml.getElementsByTagName("y:Resources")[0]; // Find resources
+	var yuri = yWorks.getNamespaceURI();
+	var resourceGroup = xml.getElementsByTagNameNS(yuri, "Resources")[0]; // Find resources
 	if(!resourceGroup)
 		return;
 	
-	var resources = resourceGroup.getElementsByTagName("y:Resource");
+	var resources = resourceGroup.getElementsByTagNameNS(yuri, "Resource");
 	var nodes = graph.getNodes(); // SVG-type Node elements interleaved with other elements
 	for(var id in nodes) {
 		var node = nodes[id];
@@ -563,19 +564,20 @@ yWorks.zoom = function(factor) {
  */
 yWorks.getCommonFields = function(attributes, xml) {
 	var g;
-	g = xml.getElementsByTagName("y:Geometry")[0];
+	var yuri = yWorks.getNamespaceURI();
+	g = xml.getElementsByTagNameNS(yuri, "Geometry")[0];
 	attributes.geometry = {};
 	attributes.geometry.x = +g.getAttribute("x");
 	attributes.geometry.y = +g.getAttribute("y");
 	attributes.geometry.width = +g.getAttribute("width");
 	attributes.geometry.height = +g.getAttribute("height");
-	g = xml.getElementsByTagName("y:Fill")[0];
+	g = xml.getElementsByTagNameNS(yuri, "Fill")[0];
 	attributes.fill = {};
 	attributes.fill.hasColor = g.getAttribute("hasColor") == "true";
 	attributes.fill.color = g.getAttribute("color");
 	attributes.fill.color2 = g.getAttribute("color2");
 	attributes.fill.transparent = g.getAttribute("transparent") == "true";
-	g = xml.getElementsByTagName("y:BorderStyle")[0];
+	g = xml.getElementsByTagNameNS(yuri, "BorderStyle")[0];
 	attributes.borderStyle1 = {};
 	attributes.borderStyle1.hasColor = g.getAttribute("hasColor") == "true";
 	attributes.borderStyle1.borderColor = g.getAttribute("color") || "none";
@@ -591,10 +593,11 @@ yWorks.getCommonFields = function(attributes, xml) {
  * @param {XML} xml - the original markup of this element
  */
 yWorks.getStyleProperties = function(attributes, xml) {
+	var yuri = yWorks.getNamespaceURI();
 	var styles = attributes.styleProperties = {};
-	var g = xml.getElementsByTagName("y:StyleProperties")[0];
+	var g = xml.getElementsByTagNameNS(yuri, "StyleProperties")[0];
 	if(g) {
-		g = g.getElementsByTagName("y:Property");
+		g = g.getElementsByTagNameNS(yuri, "Property");
 		for(var i = 0, j = g.length; i < j; i++) {
 			var name = g[i].getAttribute("name");
 			var value = g[i].getAttribute("value");
@@ -635,9 +638,14 @@ yWorks.getLabels = function(attributes, xml) {
 	if(!attributes.notes)
 		notes = attributes.notes = [];
 	
-	var x = attributes.geometry.x;
-	var y = attributes.geometry.y;
-	var labels = xml.getElementsByTagName("y:NodeLabel");
+	var x = attributes.x || 0;
+	var y = attributes.y || 0;
+	if(!("x" in attributes) && attributes.geometry) {
+		x = attributes.geometry.x;
+		y = attributes.geometry.y;
+	}
+	var yuri = yWorks.getNamespaceURI();
+	var labels = xml.getElementsByTagNameNS(yuri, "NodeLabel");
 	for(var i = 0, j = labels.length; i < j; i++) {
 		var label = labels[i];
 		var note = {};
@@ -710,7 +718,7 @@ yWorks.createLabels = function(attributes, container, contentClass) {
 				style.borderStyle = "solid";
 				style.borderColor = note.lineColor;
 			}
-			if(note.hasbackgroundColor)
+			if(note.hasBackgroundColor)
 				style.backgroundColor = note.color1;
 			if(note.rotationAngle != 0)
 				style.transform = "rotate("+note.rotationAngle+"deg)";
@@ -780,7 +788,7 @@ yWorks.setupLinearGradient = function(svg, attributes) {
 	var svgns = "http://www.w3.org/2000/svg";
 	
 	attr = attributes || {}; // Try to collect information about the gradient from the attribute.
-	var id = attr.id || (attr.elem ? attr.elem.id+"_gradient" : null);
+	var id = attr.id || (attr.elem ? attr.elem.id+"-gradient" : null);
 	var w = attr.width;
 	var h = attr.height;
 	if(!id || (!w && !h)) {
@@ -797,34 +805,47 @@ yWorks.setupLinearGradient = function(svg, attributes) {
 	
 	var stopsLength = stops.length;
 	if(stopsLength < 2) { // Missing stop interval data; we can recover if we have at least two colors
-		var color1 = attr.color1;
-		var color2 = attr.color2;
+		var ret;
+		var color1 = attr.color1, hasColor1 = color1 && color1 != "none";
+		var color2 = attr.color2, hasColor2 = color2 && color2 != "none";
 		var opacity1 = 1;
 		var opacity2 = 1;
-		if(color1 && color2) {
-			var ret;
-			ret = yWorks.colorAndOpacity(color1);
+		if(hasColor1) {
+			ret = yWorks.colorAndOpacity(attr.color1);
 			color1 = ret.color;
 			opacity1 = ret.opacity;
-			ret = yWorks.colorAndOpacity(color2);
+		}
+		if(hasColor2) {
+			ret = yWorks.colorAndOpacity(attr.color2);
 			color2 = ret.color;
 			opacity2 = ret.opacity;
-			
+		}
+		if(hasColor1 && hasColor2) {
 			stops = [];
 			stops[0] = {offset:0, color:color1, opacity:opacity1};
 			stops[1] = {offset:1.0, color:color2, opacity:opacity2};
 			stopsLength = 2;
 		}
-		else if(color1 || color2) {
-			color1 = color1 || color2;
-			var ret = yWorks.colorAndOpacity(color1);
-			color1 = ret.color;
-			opacity1 = ret.opacity;
-			return {useGradient:false, color:color1, opacity:opacity1};
+		else if(hasColor1) {
+			if(opacity1 == 1)
+				return {useGradient:false, color:color1, opacity:1};
+			
+			stops = [];
+			stops[0] = {offset:0, color:color1, opacity:opacity1};
+			stops[1] = {offset:1.0, color:color1, opacity:opacity1};
+			stopsLength = 2;
 		}
-		else {
+		else if(hasColor2) {
+			if(opacity2 == 1)
+				return {useGradient:false, color:color2, opacity:1};
+			
+			stops = [];
+			stops[0] = {offset:0, color:color2, opacity:opacity2};
+			stops[1] = {offset:1.0, color:color2, opacity:opacity2};
+			stopsLength = 2;
+		}
+		else
 			return {useGradient:false, color:"none", opacity:0};
-		}
 	}
 	else {
 		stops.sort(
@@ -899,8 +920,8 @@ yWorks.setupLinearGradient = function(svg, attributes) {
 	
 	var ret = {}; // Prepare return object
 	ret.useGradient = true;
-	ret.color = "url(#"+id+")";
-	ret.opacity = "1";
+	ret.color = 'url(#'+id+')';
+	ret.opacity = 1;
 	return ret;
 }
 
@@ -1136,7 +1157,8 @@ UMLClassNode.prototype.readXML = function(xml) {
 	yWorks.getLabels(attributes, xml); // Only the first label is ever displayed and that is the class name
 	
 	var g;
-	g = xml.getElementsByTagName("y:UML")[0];
+	var yuri = yWorks.getNamespaceURI();
+	g = xml.getElementsByTagNameNS(yuri, "UML")[0];
 	attributes.uml = {};
 	attributes.uml.clipContent = attributes.clipContent = g.getAttribute("clipContent") == "true";
 	attributes.uml.use3DEffect = attributes.use3DEffect = g.getAttribute("use3DEffect") == "true";
@@ -1144,10 +1166,10 @@ UMLClassNode.prototype.readXML = function(xml) {
 	attributes.uml.stereotype = attributes.stereotype = g.getAttribute("stereotype");
 	attributes.uml.constraint = attributes.constraint = g.getAttribute("constraint");
 	
-	g = xml.getElementsByTagName("y:AttributeLabel")[0].firstChild;
+	g = xml.getElementsByTagNameNS(yuri, "AttributeLabel")[0].firstChild;
 	attributes.uml.properties = attributes.properties = (g ? g.textContent : null);
 	
-	g = xml.getElementsByTagName("y:MethodLabel")[0].firstChild;
+	g = xml.getElementsByTagNameNS(yuri, "MethodLabel")[0].firstChild;
 	attributes.uml.methods = attributes.methods = (g ? g.textContent : null);
 	
 	return attributes;
@@ -1412,7 +1434,8 @@ ShapeNode.prototype.readXML = function(xml) {
 	yWorks.getCommonFields(attributes, xml);
 	yWorks.getLabels(attributes, xml);
 	
-	var g = xml.getElementsByTagName("y:Shape")[0];
+	var yuri = yWorks.getNamespaceURI();
+	var g = xml.getElementsByTagNameNS(yuri, "Shape")[0];
 	attributes.shape = g.getAttribute("type");
 	
 	return attributes;
@@ -1513,7 +1536,7 @@ ShapeNode.ellipseShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var ellipse = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
@@ -1546,7 +1569,7 @@ ShapeNode.rectangleShape = function(svg, shape, attr) {
 	var h = geometry.height, h2 = h/2;
 	var borderColor = borderStyle.borderColor;
 	var borderWidth = borderStyle.borderWidth;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -1611,7 +1634,7 @@ ShapeNode.parallelogramShape = function(svg, shape, attr) {
 	var w = geometry.width;
 	var h = geometry.height;
 	var w10 = w/10;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1645,7 +1668,7 @@ ShapeNode.hexagonShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w10 = w/10;
 	var h = geometry.height, h2 = h/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1681,7 +1704,7 @@ ShapeNode.triangleShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1714,7 +1737,7 @@ ShapeNode.trapezoidShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w4 = w/4;
 	var h = geometry.height;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1757,7 +1780,7 @@ ShapeNode.octagonShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w3 = w/3, w23 = 2*w3;
 	var h = geometry.height, h3 = h/3, h23 = 2*h3;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"); // TODO: look at the octagon code in GenericNode
@@ -1795,7 +1818,7 @@ ShapeNode.diamondShape = function(svg, shape, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var ret = yWorks.setupLinearGradient(svg, {id:attr.id+'-gradient', width:w, height:h, color1:fill.color, color2:fill.color2});
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	var d = "";
@@ -1807,7 +1830,7 @@ ShapeNode.diamondShape = function(svg, shape, attr) {
 	path.setAttributeNS(null, "d", d);
 	path.setAttributeNS(null, "stroke-dasharray", yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth));
 	var style = path.style;
-	style.fill = color;
+	style.fill = ret.color;
 	style.stroke = borderStyle.borderColor;
 	style["stroke-width"] = borderStyle.borderWidth;
 	
@@ -1839,7 +1862,8 @@ GenericNode.prototype.readXML = function(xml) {
 	yWorks.getStyleProperties(attributes, xml);
 	yWorks.getLabels(attributes, xml);
 	
-	var g = xml.getElementsByTagName("y:GenericNode")[0];
+	var yuri = yWorks.getNamespaceURI();
+	var g = xml.getElementsByTagNameNS(yuri, "GenericNode")[0];
 	attributes.configuration = g.getAttribute("configuration");
 	
 	return attributes;
@@ -2205,7 +2229,7 @@ GenericNode.createFlowChartCircle = function(svg, configuration, attr) {
 		rx = w2;
 		ry = h2;
 	}
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	
 	var svgns = "http://www.w3.org/2000/svg";
 	var ellipse = document.createElementNS(svgns, "ellipse"), style = null;
@@ -2252,7 +2276,7 @@ GenericNode.createFlowChartTerminator = function(svg, configuration, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width;
 	var h = geometry.height;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -2310,7 +2334,7 @@ GenericNode.createFlowChartRectangle = function(svg, configuration, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width;
 	var h = geometry.height;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -2384,7 +2408,7 @@ GenericNode.createFlowChartShavedCornerRectangle = function(svg, configuration, 
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width;
 	var h = geometry.height;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	var beginLoop = configuration.search("loopLimit") != -1;
 	var n = 9;
@@ -2438,7 +2462,7 @@ GenericNode.createFlowChartShavedSideRectangle = function(svg, configuration, at
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width;
 	var h = geometry.height, h2 = h/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	var n = 9;
 	var preparation = configuration.search("preparation") != -1;
@@ -2492,7 +2516,7 @@ GenericNode.createFlowChartAngledTopRectangle = function(svg, configuration, att
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width;
 	var h = geometry.height;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	var n = 9;
 	
@@ -2528,7 +2552,7 @@ GenericNode.createFlowChartCurvedRectangle = function(svg, configuration, attr) 
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width;
 	var h = geometry.height, h2 = h/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	var t = 4.5;
 	var cx = w/4;
@@ -2580,7 +2604,7 @@ GenericNode.createFlowChartCurvedSideRectangle = function(svg, configuration, at
 	var h = geometry.height, h3 = h/3;
 	var n = 4.5, n15 = 1.5 * n;
 	var wn = w - n;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"), style = null;
@@ -2636,7 +2660,7 @@ GenericNode.createFlowChartSpecialRectangle = function(svg, configuration, attr)
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w9 = w/9;
 	var h = geometry.height;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -2685,7 +2709,7 @@ GenericNode.createFlowChartDisplay = function(svg, configuration, attr) {
 	var w12 = w1/2, w14 = w1/4, w126 = w12/6;
 	var cx1 = -(w12 + w14 + rat), cx2 = (w12 - w14 - rat);
 	var cyw1 = -(w12 - w126), cyw2 = -(w12 + w126);
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -2721,7 +2745,7 @@ GenericNode.createFlowChartCylinder = function(svg, configuration, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w8 = w/8, w28 = 2*w8, w68 = 6*w8;
 	var h = geometry.height, h6 = h/6;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -2767,7 +2791,7 @@ GenericNode.createFlowChartDiamond = function(svg, configuration, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -2803,7 +2827,7 @@ GenericNode.createFlowChartParallelogram = function(svg, configuration, attr) {
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var n = 9;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -2839,7 +2863,7 @@ GenericNode.createFlowChartTrapazoid = function(svg, configuration, attr) {
 	var w = geometry.width;
 	var h = geometry.height;
 	var n = 9;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -2874,7 +2898,7 @@ GenericNode.createFlowChartPentagon = function(svg, configuration, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w4 = w/4, w34 = 3*w4;
 	var h = geometry.height, h2 = h/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -2943,7 +2967,7 @@ GenericNode.createEntityAttribute = function(svg, configuration, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2, cx = w2 + 0.5, rx = w2;
 	var h = geometry.height, h2 = h/2, cy = h2 + 0.5, ry = h2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -2988,7 +3012,7 @@ GenericNode.createEntitySmall = function(svg, configuration, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width;
 	var h = geometry.height;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";var rect = document.createElementNS(svgns, "rect"), style = null;
@@ -3043,7 +3067,7 @@ GenericNode.createEntityBig = function(svg, configuration, attr) {
 	rect.setAttributeNS(null, "stroke-dasharray", dashed);
 	style = rect.style;
 	if(header)
-		style.fill = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+		style.fill = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	else
 		style.fill = fill.color2; // Just the header section (see below)
 	style.stroke = borderStyle.borderColor;
@@ -3085,7 +3109,7 @@ GenericNode.createEntityRelationship = function(svg, configuration, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -3137,7 +3161,7 @@ GenericNode.createGateway = function(svg, configuration, attr) {
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var len = Math.min(w, h)/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path"); // Base
@@ -3173,7 +3197,7 @@ GenericNode.createEvent = function(svg, configuration, attr) {
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var len = Math.min(w, h)/2;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	
 	var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle"); // Base
 	circle.setAttributeNS(null, "cx", w2 + 1);
@@ -3203,7 +3227,7 @@ GenericNode.createConversation = function(svg, configuration, attr) {
 	var w = geometry.width, w2 = w/2, w21 = w2 + 1;
 	var h = geometry.height, h2 = h/2, h21 = h2 + 1;
 	var len = Math.min(w, h), len2 = Math.min(w2, h2), len4 = len/4, lenh = 0.866 * len2; // cos30
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -3239,7 +3263,7 @@ GenericNode.createArtifactDataObject = function(svg, type, attr) {
 	var borderStyle = attr.borderStyle1 || attr;
 	var w = geometry.width, w2 = w/2, w21 = w2 + 1;
 	var h = geometry.height, h2 = h/2, h21 = h2 + 1;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var collection = attr.styleProperties["com.yworks.bpmn.marker1"];
@@ -3368,7 +3392,7 @@ GenericNode.createArtifactMessage = function(svg, type, attr) {
 				color2 = yWorks.colorAndOpacity(color2, ret.opacity).color;
 			}
 		}
-		color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:color1, color2:color2}).color;
+		color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:color1, color2:color2}).color;
 	}
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -3413,7 +3437,7 @@ GenericNode.createDataStore = function(svg, type, attr) {
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2, h8 = h/8, h82 = h8/2, h78 = 7*h8;
 	var y = h8;
-	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"_gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
+	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
 	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	var svgns = "http://www.w3.org/2000/svg";
@@ -4279,7 +4303,7 @@ GenericNode.createPlate = function(svg, configuration, attr) {
 	var color1 = yWorks.shadeBlendConvert(0.45, fill.color2 || color, "#FFFFFF");
 	var color2 = yWorks.shadeBlendConvert(0.65, color1, color);
 	var ret = yWorks.setupLinearGradient(svg,
-		{id:attr.id+"_gradient", width:w, height:h, x2:x2, y2:1,
+		{id:attr.id+"-gradient", width:w, height:h, x2:x2, y2:1,
 			stops:[{offset:0.0, color:"#FFFFFF", opacity:1.0}, {offset:0.35, color:color1, opacity:1.0}, {offset:0.55, color:color2, opacity:1.0}]
 		}
 	);
@@ -4332,7 +4356,7 @@ GenericNode.createBevel = function(svg, configuration, attr) {
 	var color1 = yWorks.shadeBlendConvert(0.75, fill.color2 || color, "#FFFFFF");
 	var color2 = yWorks.shadeBlendConvert(0.5, color1, color);
 	var ret = yWorks.setupLinearGradient(svg,
-		{id:attr.id+"_gradient", width:w, height:h, x2:0, y2:1,
+		{id:attr.id+"-gradient", width:w, height:h, x2:0, y2:1,
 			stops:[{offset:0.0, color:color1, opacity:1.0}, {offset:0.75, color:color2, opacity:1.0}]
 		}
 	);
@@ -4441,10 +4465,11 @@ SVGNode.prototype.readXML = function(xml) {
 	attributes.id = xml.getAttribute("id");
 	yWorks.getCommonFields(attributes, xml);
 	
-	var g = xml.getElementsByTagName("y:SVGModel")[0];
+	var yuri = yWorks.getNamespaceURI();
+	var g = xml.getElementsByTagNameNS(yuri, "SVGModel")[0];
 	attributes.svgBoundsPolicy = g.getAttribute("svgBoundsPolicy");
 	
-	g = g && g.getElementsByTagName("y:SVGContent")[0];
+	g = g && g.getElementsByTagNameNS(yuri, "SVGContent")[0];
 	attributes.refid = g && g.getAttribute("refid");
 	attributes.resource = null;
 	
@@ -4640,7 +4665,9 @@ ProxyAutoBoundsNode.getInsets = function(attributes, xml) {
  */
 ProxyAutoBoundsNode.getStateAndInsets = function(attributes, xml) {
 	var field = (attributes.state = {}), test = null;
-	var section = xml.getElementsByTagName("y:State")[0];
+	var yuri = yWorks.getNamespaceURI();
+	
+	var section = xml.getElementsByTagNameNS(yuri, "State")[0];
 	field.closed = section.getAttribute("closed") == "true";
 	field.closedHeight = +section.getAttribute("closedHeight");
 	field.closedWidth = +section.getAttribute("closedWidth");
@@ -4649,8 +4676,8 @@ ProxyAutoBoundsNode.getStateAndInsets = function(attributes, xml) {
 	if(test = section.getAttribute("autoResize"))
 		field.autoResize = test == "true";
 	
-	ProxyAutoBoundsNode.getInsets((attributes.insets = {}), xml.getElementsByTagName("y:Insets")[0]);
-	ProxyAutoBoundsNode.getInsets((attributes.borderInsets = {}), xml.getElementsByTagName("y:BorderInsets")[0]);
+	ProxyAutoBoundsNode.getInsets((attributes.insets = {}), xml.getElementsByTagNameNS(yuri, "Insets")[0]);
+	ProxyAutoBoundsNode.getInsets((attributes.borderInsets = {}), xml.getElementsByTagNameNS(yuri, "BorderInsets")[0]);
 }
 
 /**
@@ -4659,24 +4686,26 @@ ProxyAutoBoundsNode.getStateAndInsets = function(attributes, xml) {
 ProxyAutoBoundsNode.prototype.readXML = function(xml) {
 	var attributes = {};
 
-	attributes.id = this.id;
+	var id = attributes.id = this.id;
 	attributes["foldertype"] = xml.getAttribute("yfiles.foldertype");
 	
 	var g;
-	g = xml.getElementsByTagName("y:Realizers")[0];
+	var yuri = yWorks.getNamespaceURI();
+	g = xml.getElementsByTagNameNS(yuri, "Realizers")[0];
 	attributes.realizers = {};
 	attributes.realizers.active = +g.getAttribute("active");
 	
 	// GroupNodes
 	var groups = attributes.groups = [], gElems = null;
-	gElems = g.getElementsByTagName("y:GroupNode");
+	gElems = g.getElementsByTagNameNS(yuri, "GroupNode");
 	for(var i = 0, j = gElems.length; i < j; i++) {
 		var group = {};
 		var gi = gElems[i];
+		group.id = id+"-"+i;
 		yWorks.getCommonFields(group, gi);
 		yWorks.getLabels(group, gi);
 		ProxyAutoBoundsNode.getStateAndInsets(group, gi);
-		var section = gi.getElementsByTagName("y:Shape")[0], field = null;
+		var section = gi.getElementsByTagNameNS(yuri, "Shape")[0], field = null;
 		group.shape = section.getAttribute("type");
 		groups.push(group);
 	}
@@ -4686,13 +4715,14 @@ ProxyAutoBoundsNode.prototype.readXML = function(xml) {
 	}
 	
 	// GenericGroupNodes
-	gElems = g.getElementsByTagName("y:GenericGroupNode");
+	gElems = g.getElementsByTagNameNS(yuri, "GenericGroupNode");
 	for(var i = 0, j = gElems.length; i < j; i++) {
 		var group = {};
 		var gi = gElems[i];
+		group.id = id+"-"+i;
 		yWorks.getCommonFields(group, gi);
-		yWorks.getLabels(group, gi);
 		yWorks.getStyleProperties(group, gi);
+		yWorks.getLabels(group, gi);
 		ProxyAutoBoundsNode.getStateAndInsets(group, gi);
 		groups.push(group);
 	}
@@ -4710,29 +4740,67 @@ ProxyAutoBoundsNode.prototype.createElement = function(attr) {
 	var containerNode = Representation.prototype.createElement.call(this, attr), style = null;
 	containerNode.className = "yWorks proxy";
 	
-	var contentNode = null, style = null;
+	var contentNode = null, groupNode = null, style = null;
 	var groups = attr.groups;
 	var active = attr.realizers.active;
 	for(var i = 0, j = groups.length; i < j; i++) {
 		var group = groups[i];
+		groupNode = document.createElement("div");
+		var id = groupNode.id = group.id;
+		groupNode.className = "yWorks proxy child";
 		if(attr.nodeType == "GroupNodes") {
 			var geometry = group.geometry;
+			var fill = group.fill;
+			var borderStyle = group.borderStyle1;
 			
 			contentNode = document.createElement("div"), style = null;
-			contentNode.id = this.id+"-shape-"+i;
+			contentNode.id = id+"-shape";
 			contentNode.className = "yWorks proxy shape";
 			style = contentNode.style;
 			style.left = geometry.x+"px";
 			style.top = geometry.y+"px";
 			style.width = geometry.width+"px";
 			style.height = geometry.height+"px";
-			if(i != active)
-				style.visibility = "hidden";
-			contentNode.appendChild( ShapeNode.switchShape(group.shape, group) ); // One part of the proxy auto-bounds is ShapeNode design
-			containerNode.appendChild(contentNode);
+			
+			var svgns = "http://www.w3.org/2000/svg";
+			var svg = document.createElementNS(svgns, "svg");
+			svg.setAttributeNS(null, "width", geometry.width);
+			svg.setAttributeNS(null, "height", geometry.height);
+			svg.appendChild( ShapeNode.switchShape(group.shape, group) );
+			var stateBox = document.createElementNS(svgns, "rect");
+			stateBox.setAttributeNS(null, "x", 4);
+			stateBox.setAttributeNS(null, "y", 4);
+			stateBox.setAttributeNS(null, "width", 15);
+			stateBox.setAttributeNS(null, "height", 15);
+			style = stateBox.style;
+			style.fill = "#d3d3d3";
+			style.stroke = "#1a1a1a";
+			style["stroke-width"] = 0.5;
+			svg.appendChild(stateBox);
+			contentNode.appendChild(svg);
 		}
-		else
-			console.log("No graphics for "+attr.id+"; please construct proper "+attr.nodeType+" element");
+		else {
+			var geometry = group.geometry;
+			var fill = group.fill;
+			var borderStyle = group.borderStyle1;
+			
+			contentNode = document.createElement("div"), style = null;
+			contentNode.id = id+"-shape";
+			contentNode.className = "yWorks proxy shape";
+			style = contentNode.style;
+			style.left = geometry.x+"px";
+			style.top = geometry.y+"px";
+			style.width = geometry.width+"px";
+			style.height = geometry.height+"px";
+			
+			contentNode.appendChild( ShapeNode.switchShape("roundrectangle", group) );
+			//console.log("No graphics for "+attr.id+"; please construct proper "+attr.nodeType+" element");
+		}
+		groupNode.appendChild(contentNode);
+		//yWorks.createLabels(group, groupNode);
+		containerNode.appendChild(groupNode);
+		if(i != active)
+			groupNode.style.visibility = "hidden";
 	}
 	return containerNode;
 }
@@ -4769,7 +4837,8 @@ TableNode.prototype.readXML = function(xml) {
 	attributes["foldertype"] = xml.getAttribute("yfiles.foldertype");
 	
 	var g;
-	g = xml.getElementsByTagName("y:TableNode")[0];
+	var yuri = yWorks.getNamespaceURI();
+	g = xml.getElementsByTagNameNS(yuri, "TableNode")[0];
 	var field = null
 	yWorks.getCommonFields(attributes, g);
 	yWorks.getLabels(attributes, g);
@@ -4778,38 +4847,38 @@ TableNode.prototype.readXML = function(xml) {
 	attributes.configuration = g.getAttribute("configuration");
 	// Table
 	var table = attributes.table = {};
-	var tElem = g.getElementsByTagName("y:Table")[0];
-	TableNode.getInsets((table.defaultColumnInsets = {}), tElem.getElementsByTagName("y:DefaultColumnInsets")[0]);
-	TableNode.getInsets((table.defaultRowInsets = {}), tElem.getElementsByTagName("y:DefaultRowInsets")[0]);
-	TableNode.getInsets((table.insets = {}), tElem.getElementsByTagName("y:Insets")[0]);
+	var tElem = g.getElementsByTagNameNS(yuri, "Table")[0];
+	TableNode.getInsets((table.defaultColumnInsets = {}), tElem.getElementsByTagNameNS(yuri, "DefaultColumnInsets")[0]);
+	TableNode.getInsets((table.defaultRowInsets = {}), tElem.getElementsByTagNameNS(yuri, "DefaultRowInsets")[0]);
+	TableNode.getInsets((table.insets = {}), tElem.getElementsByTagNameNS(yuri, "Insets")[0]);
 	
 	var gElems = null, fieldGroup = null, fields = null;
 	var numRows = 0, numCols = 0;
 	// Table columns
-	gElems = tElem.getElementsByTagName("y:Columns")[0];
+	gElems = tElem.getElementsByTagNameNS(yuri, "Columns")[0];
 	fieldGroup = table.columns = [];
-	fields = gElems.getElementsByTagName("y:Column");
+	fields = gElems.getElementsByTagNameNS(yuri, "Column");
 	for(var i = 0, j = fields.length; i < j; i++) {
 		var obj = {};
 		var field = fields[i];
 		obj.id = field.getAttribute("id");
 		obj.width = +field.getAttribute("width");
 		obj.minimumWidth = +field.getAttribute("minimumWidth");
-		if( TableNode.getInsets((obj.insets = {}), field.getElementsByTagName("y:Insets")[0]) )
+		if( TableNode.getInsets((obj.insets = {}), field.getElementsByTagNameNS(yuri, "Insets")[0]) )
 			numCols++;
 		fieldGroup.push(obj);
 	}
 	// Table rows
-	gElems = tElem.getElementsByTagName("y:Rows")[0];
+	gElems = tElem.getElementsByTagNameNS(yuri, "Rows")[0];
 	fieldGroup = table.rows = [];
-	fields = gElems.getElementsByTagName("y:Row");
+	fields = gElems.getElementsByTagNameNS(yuri, "Row");
 	for(var i = 0, j = fields.length; i < j; i++) {
 		var obj = {};
 		var field = fields[i];
 		obj.id = field.getAttribute("id");
 		obj.height = +field.getAttribute("height");
 		obj.minimumHeight = +field.getAttribute("minimumHeight");
-		if( TableNode.getInsets((obj.insets = {}), field.getElementsByTagName("y:Insets")[0]) )
+		if( TableNode.getInsets((obj.insets = {}), field.getElementsByTagNameNS(yuri, "Insets")[0]) )
 			numRows++;
 		fieldGroup.push(obj);
 	}
@@ -4973,14 +5042,15 @@ PolyLineEdge.prototype.readXML = function(xml) {
 	attributes.tgt = xml.getAttribute("target"); // TODO: rename this later
 	
 	var g = null, field = null;
-	g = xml.getElementsByTagName("y:Path")[0];
+	var yuri = yWorks.getNamespaceURI();
+	g = xml.getElementsByTagNameNS(yuri, "Path")[0];
 	field = attributes.path = {};
 	field.sx = +g.getAttribute("sx");
 	field.sy = +g.getAttribute("sy");
 	field.tx = +g.getAttribute("tx");
 	field.ty = +g.getAttribute("ty");
 	
-	g = xml.getElementsByTagName("y:Point"); // We may have a number of intermediate points
+	g = xml.getElementsByTagNameNS(yuri, "Point"); // We may have a number of intermediate points
 	field = attributes.points = [];
 	for(var i = 0, j = g.length; i < j; i++) {
 		var point = g[i];
@@ -4990,20 +5060,22 @@ PolyLineEdge.prototype.readXML = function(xml) {
 		);
 	}
 	
-	g = xml.getElementsByTagName("y:LineStyle")[0];
+	g = xml.getElementsByTagNameNS(yuri, "LineStyle")[0];
 	field = attributes.lineStyle = {};
-	field.color = attributes.stroke = g.getAttribute("color");
-	field.type = attributes.type = g.getAttribute("type");
-	field.width = attributes.strokeWidth = g.getAttribute("width");
+	field.color = g.getAttribute("color");
+	field.type = g.getAttribute("type");
+	field.width = g.getAttribute("width");
 	
-	g = xml.getElementsByTagName("y:Arrows")[0];
+	g = xml.getElementsByTagNameNS(yuri, "Arrows")[0];
 	field = attributes.arrows = {};
 	field.source = g.getAttribute("source");
 	field.target = g.getAttribute("target");
 	
-	g = xml.getElementsByTagName("y:BendStyle")[0];
+	g = xml.getElementsByTagNameNS(yuri, "BendStyle")[0];
 	field = attributes.bendStyle = {};
 	field.smoothed = g.getAttribute("smoothed") == "true";
+	
+	yWorks.getLabels(attributes, xml);
 	return attributes;
 }
 
@@ -5158,7 +5230,7 @@ PolyLineEdge.arrowHead = function(svg, side, attributes) {
 	
 	var svgid = attributes.id+"-"+side+"-arrow";
 	var attr = {};
-	attr.stroke = attributes.stroke;
+	attr.stroke = attributes.lineStyle.color;
 	attr.arrowType = arrowType;
 	attr.transform = "rotate("+angle+" "+left+" "+top+")";
 	switch(arrowType) {
@@ -5503,7 +5575,7 @@ PolyLineEdge.oneArrowHead = function(svg, id, left, top, attr) {
  * @param {String} attr.arrowType - the specific type of endpoint being drawn (multiple may be pooled by common strokes)
  * @param {String} attr.transform - as SVG rotation transformation to apply to the drawing
  */
-PolyLineEdge.manyArrowHead = function(svg, id, left, top, attr) {
+PolyLineEdge.manyArrowHead = function(svg, id, left, top, attr) {	
 	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	path.id = id;
 	var d = "";
