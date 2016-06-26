@@ -334,9 +334,10 @@ Representation.prototype.getBounds = function() {
  * @param {Number} bounds.y - the y-coordinate of the element ("top" in HTML)
  * @param {Number} bounds.width - the span called width
  * @param {Number} bounds.height - the span called height
- * @param {Boolean} increment - rather than just setting the bounds, the new bounds is used as an offset
+ * @returns {Boolean} always returns false
  */
-Representation.prototype.setBounds = function(bounds, increment) {
+Representation.prototype.setBounds = function(bounds) {
+	return false;
 }
 
 /**

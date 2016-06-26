@@ -52,9 +52,9 @@ yWorks.setElementsInView = function(graph) {
 			upperx = xw;
 		if(yh > uppery)
 			uppery = yh;
-		var notes = data.notes || [];
-		for(var i = 0, j = notes.length; i < j; i++) { // Certain nodes have notes with their own dimensions
-			var nx = notes[i].x, ny = notes[i].y, nxw = nx + notes[i].width, nyh = ny + notes[i].height;
+		var labels = data.labels || [];
+		for(var i = 0, j = labels.length; i < j; i++) { // Certain nodes have labels with their own dimensions
+			var nx = labels[i].x, ny = labels[i].y, nxw = nx + labels[i].width, nyh = ny + labels[i].height;
 			if(nx < lowerx)
 				lowerx = nx;
 			if(ny < lowery)
@@ -81,7 +81,7 @@ yWorks.setElementsInView = function(graph) {
 				lowery = point.y;
 			if(point.y > uppery)
 				uppery = point.y;
-			// TODO: edges can also have notes; currently we don't account for them, though
+			// TODO: edges can also have labels; currently we don't account for them, though
 		}
 	}
 	if(lowerx == Infinity)
@@ -100,13 +100,13 @@ yWorks.setElementsInView = function(graph) {
 	graphData.height = (uppery - lowery);
 	
 	//TODO: in the future, we want all elements to be moved so that the left-most ones and top-most ones are at x=0 and y=0, respectively
- 	var cwidth = canvas.getWidth();
+// 	var cwidth = canvas.getWidth();
 	var correctx = 0;
-	if(lowerx < 0 || upperx > cwidth)
+//	if(lowerx < 0 || upperx > cwidth)
 		correctx = -lowerx;
-	var cheight = canvas.getHeight();
+//	var cheight = canvas.getHeight();
 	var correcty = 0;
-	if(lowery < 0 || uppery > cheight)
+//	if(lowery < 0 || uppery > cheight)
 		correcty = -lowery;
 	yWorks.shiftElements(graph, correctx, correcty); // Shift everything within a positive buffer region for the purposes of scrolling
 }
@@ -123,43 +123,16 @@ yWorks.shiftElements = function(graph, dx, dy) {
 	if(dx == 0 && dy == 0)
 		return;
 	
-	var nodes = graph.getNodes(); // Nodes
-	for(var id in nodes) {
-		var data = nodes[id].getRepresentation();
-		if(!data)
-			continue;
-		data.setBounds({x:dx, y:dy}, true);
-		data = data.getAttributes();
-		var notes = data.notes || [];
-		for(var i = 0, j = notes.length; i < j; i++) {
-			notes[i].x += dx;
-			notes[i].y += dy;
+	var elems = [graph.getNodes(), graph.getEdges(), graph.getHyperedges()];
+	for(var i = 0, j = elems.length; i < j; i++) {
+		var elementMap = elems[i];
+		for(var id in elementMap) {
+			var data = elementMap[id].getRepresentation();
+			if(!data)
+				continue;
+			data.shift(dx, dy);
 		}
 	}
-	
-	var edges = graph.getEdges(); // Edges
-	for(var id in edges) {
-		var data = edges[id].getRepresentation();
-		if(!data)
-			continue;
-		data = data.getAttributes();
-		var points = data.points;
-		for(var i = 0, j = points.length; i < j; i++) {
-			points[i].x += dx;
-			points[i].y += dy;
-		}
-		
-		// Move over clipped end coordinates, if they exist
-		var endpoints = data.endpoints;
-		if(endpoints) {
-			endpoints.source.x += dx;
-			endpoints.source.y += dy;
-			endpoints.target.x += dx;
-			endpoints.target.y += dy;
-		}
-	}
-	
-	// TODO: Hyperedges?
 }
 
 /**
@@ -578,11 +551,11 @@ yWorks.getCommonFields = function(attributes, xml) {
 	attributes.fill.color2 = g.getAttribute("color2");
 	attributes.fill.transparent = g.getAttribute("transparent") == "true";
 	g = xml.getElementsByTagNameNS(yuri, "BorderStyle")[0];
-	attributes.borderStyle1 = {};
-	attributes.borderStyle1.hasColor = g.getAttribute("hasColor") == "true";
-	attributes.borderStyle1.borderColor = g.getAttribute("color") || "none";
-	attributes.borderStyle1.borderStyle = g.getAttribute("type");
-	attributes.borderStyle1.borderWidth = +g.getAttribute("width");
+	attributes.borderStyle = {};
+	attributes.borderStyle.hasColor = g.getAttribute("hasColor") == "true";
+	attributes.borderStyle.borderColor = g.getAttribute("color") || "none";
+	attributes.borderStyle.borderStyle = g.getAttribute("type");
+	attributes.borderStyle.borderWidth = +g.getAttribute("width");
 }
 
 /**
@@ -611,9 +584,9 @@ yWorks.getStyleProperties = function(attributes, xml) {
  * @protected
  * @static
  * @param {Object} attributes - contains the data pertinent to this element
- * @param {Array[Object]} attributes.notes - na
- * @param {Number} i in attributes notes - index of the labels extracted from the XML/1998/namespace
- * @param {Object} attributes.notes[i] - the data that formats a single text label (hitherto, "obj")
+ * @param {Array[Object]} attributes.labels - na
+ * @param {Number} i in attributes labels - index of the labels extracted from the XML/1998/namespace
+ * @param {Object} attributes.labels[i] - the data that formats a single text label (hitherto, "obj")
  * @param {String} obj.content - na
  * @param {Number} obj.x - na
  * @param {Number} obj.y - na
@@ -634,9 +607,9 @@ yWorks.getStyleProperties = function(attributes, xml) {
  * @param {XML} xml - the original markup of this element
  */
 yWorks.getLabels = function(attributes, xml) {
-	var notes = attributes.notes;
-	if(!attributes.notes)
-		notes = attributes.notes = [];
+	var labels = attributes.nodeLabels;
+	if(!labels)
+		labels = attributes.nodeLabels = [];
 	
 	var x = attributes.x || 0;
 	var y = attributes.y || 0;
@@ -645,14 +618,14 @@ yWorks.getLabels = function(attributes, xml) {
 		y = attributes.geometry.y;
 	}
 	var yuri = yWorks.getNamespaceURI();
-	var labels = xml.getElementsByTagNameNS(yuri, "NodeLabel");
-	for(var i = 0, j = labels.length; i < j; i++) {
-		var label = labels[i];
+	var nodeLabels = xml.getElementsByTagNameNS(yuri, "NodeLabel");
+	for(var i = 0, j = nodeLabels.length; i < j; i++) {
+		var label = nodeLabels[i];
 		var note = {};
-		if(!label.firstChild || !label.firstChild.nodeValue)
-			continue; // Empty note
+		note.content = null;
+		if(label.firstChild && label.firstChild.nodeValue)
+			note.content = label.firstChild.nodeValue;
 		
-		note.content = label.firstChild.nodeValue;
 		note.x = +label.getAttribute("x") + x;
 		note.y = +label.getAttribute("y") + y;
 		note.width = +label.getAttribute("width");
@@ -674,7 +647,28 @@ yWorks.getLabels = function(attributes, xml) {
 		note.autoSizePolicy = label.getAttribute("autoSizePolicy");
 		note.modelName = label.getAttribute("modelName");
 		note.rotationAngle = +label.getAttribute("rotationAngle");
-		notes.push(note);
+		
+		var g = label.getElementsByTagNameNS(yuri, "SmartNodeLabelModel")[0];
+		if(g) {
+			note.labelModel = { smartNodeLabelModel:{} };
+			note.labelModel.smartNodeLabelModel.distance = +g.getAttribute("distance");
+		}
+		
+		g = label.getElementsByTagNameNS(yuri, "SmartNodeLabelModelParameter")[0];
+		if(g) {
+			note.modelParameter = { smartNodeLabelModelParameter:{} };
+			var field = note.modelParameter.smartNodeLabelModelParameter;
+			field.labelRatioX = +g.getAttribute("labelRatioX");
+			field.labelRatioY = +g.getAttribute("labelRatioY");
+			field.nodeRatioX = +g.getAttribute("nodeRatioX");
+			field.nodeRatioY = +g.getAttribute("nodeRatioY");
+			field.offsetX = +g.getAttribute("offsetX");
+			field.offsetY = +g.getAttribute("offsetY");
+			field.upX = +g.getAttribute("upX");
+			field.upY = +g.getAttribute("upY");
+		}
+		
+		labels.push(note);
 	}
 }
 
@@ -684,20 +678,20 @@ yWorks.getLabels = function(attributes, xml) {
  * @static
  * @param {Object} attributes - na
  * @param {String} attributes.id - na
- * @param {List[Object]} attributes.notes - na
+ * @param {List[Object]} attributes.labels - na
  * @param {DOMElement} container - na
  * @param {String} contentClass - na
  */
 yWorks.createLabels = function(attributes, container, contentClass) {
-	var notes = attributes.notes || [];
+	var labels = attributes.nodeLabels || [];
 	contentClass = contentClass || "yWorks note entry";
 	
-	for(var i = 0, j = notes.length; i < j; i++) {
-		var note = notes[i];
+	for(var i = 0, j = labels.length; i < j; i++) {
+		var note = labels[i];
 		var notediv = document.createElement("div"), style = null;
 		notediv.id = attributes.id+"-label-"+i;
-		var content = yWorks.splitOnNewLines(notediv, note.content, contentClass);
-		if(content.length) {
+		if(note.content) {
+			yWorks.splitOnNewLines(notediv, note.content, contentClass);
 			notediv.className = "yWorks note content";
 			style = notediv.style;
 			style.left = note.x+"px";
@@ -1107,30 +1101,41 @@ yWorksRepresentation.prototype.getBounds = function() {
 /**
  * Provide updated two-dimensional coordinates and span for this element.
  * @override
+ * @returns {Boolean} always returns true
  */
-yWorksRepresentation.prototype.setBounds = function(bounds, increment) {
+yWorksRepresentation.prototype.setBounds = function(bounds) {
  	bounds = bounds || {};
 	var attr = this.data;
 	var geometry = attr.geometry;
-	if(increment) {
-		if("x" in bounds)
-			geometry.x += bounds.x;
-		if("y" in bounds)
-			geometry.y += bounds.y;
-		if("width" in bounds)
-			geometry.width += bounds.width;
-		if("height" in bounds)
-			geometry.height += bounds.height;
-	}
-	else {
-		if("x" in bounds)
-			geometry.x = bounds.x;
-		if("y" in bounds)
-			geometry.y = bounds.y;
-		if("width" in bounds)
-			geometry.width = bounds.width;
-		if("height" in bounds)
-			geometry.height = bounds.height;
+	if("x" in bounds)
+		geometry.x = bounds.x;
+	if("y" in bounds)
+		geometry.y = bounds.y;
+	if("width" in bounds)
+		geometry.width = bounds.width;
+	if("height" in bounds)
+		geometry.height = bounds.height;
+	return true;
+}
+
+/**
+ * Move all related elements of this representation, elements and labels.
+ * @param {Number} dx - the x-coordinate displacement
+ * @param {Number} dy - the y-coordinate displacement
+ */
+yWorksRepresentation.prototype.shift = function(dx, dy) {
+	dx = dx || 0;
+	dy = dy || 0;
+	
+	var attr = this.data;
+	var geometry = attr.geometry;
+	geometry.x += dx;
+	geometry.y += dy;
+	
+	var labels = attr.nodeLabels || [];
+	for(var i = 0, j = labels.length; i < j; i++) {
+		labels[i].x += dx;
+		labels[i].y += dy;
 	}
 }
 
@@ -1184,7 +1189,7 @@ UMLClassNode.prototype.createElement = function(attr) {
 	attr = attr || this.data || {};
 	var geometry = attr.geometry;
 	var fill = attr.fill;
-	var borderStyle1 = attr.borderStyle1;
+	var borderStyle = attr.borderStyle;
 	var uml = attr.uml;
 	
 	var gwidth = geometry.width+"px";
@@ -1193,8 +1198,8 @@ UMLClassNode.prototype.createElement = function(attr) {
 	var methods = uml.methods;
 	var fields = properties || methods;
 	
-	var borderColor = borderStyle1.borderColor;
-	var borderLine = borderStyle1.borderStyle; // Attribute border-style needs better parsing for CSS
+	var borderColor = borderStyle.borderColor;
+	var borderLine = borderStyle.borderStyle; // Attribute border-style needs better parsing for CSS
 	if(uml.use3DEffect)
 		borderLine = "outset";
 	else if(borderLine == "dashed_dotted")
@@ -1218,7 +1223,7 @@ UMLClassNode.prototype.createElement = function(attr) {
 	style["background-color"] = fill.color;
 	style["border-color"] = uml.use3DEffect ? fill.color : borderColor;
 	style["border-style"] = borderLine;
-	style["border-width"] = borderStyle1.borderWidth+"px";
+	style["border-width"] = borderStyle.borderWidth+"px";
 	style.opacity = fill.transparent ? 0 : 1; // Note: transparency is the opposite of opacity
 	style.overflow = overflow;
 	containerNode.appendChild(contentNode);
@@ -1236,7 +1241,7 @@ UMLClassNode.prototype.createElement = function(attr) {
 	featureNode = document.createElement("div");
 	featureNode.id = this.id+"-name";
 	featureNode.className = "yWorks uml name";
-	var note = attr.notes[0] || {content:"Class", fontColor:"#000000", fontSize:10};
+	var note = attr.nodeLabels[0] || {content:"Class", fontColor:"#000000", fontSize:10};
 	var content = yWorks.splitOnNewLines(featureNode, note.content, "className");
 	style = featureNode.style;
 	style.width = gwidth;
@@ -1344,15 +1349,15 @@ UMLNoteNode.prototype.createElement = function(attr) {
 	attr = attr || this.data || {};
 	var geometry = attr.geometry;
 	var fill = attr.fill;
-	var borderStyle1 = attr.borderStyle1;
+	var borderStyle = attr.borderStyle;
 	
 	var x = geometry.x;
 	var y = geometry.y;
 	var w = geometry.width;
 	var h = geometry.height;
 	
-	var borderColor = borderStyle1.borderColor;
-	var lineStyle = yWorks.createSVGLinePattern(borderStyle1.borderStyle, borderStyle1.borderWidth);
+	var borderColor = borderStyle.borderColor;
+	var lineStyle = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
 	
 	// uml note frame
 	var containerNode = Representation.prototype.createElement.call(this, attr);
@@ -1435,8 +1440,9 @@ ShapeNode.prototype.readXML = function(xml) {
 	yWorks.getLabels(attributes, xml);
 	
 	var yuri = yWorks.getNamespaceURI();
+	attributes.shape = {};
 	var g = xml.getElementsByTagNameNS(yuri, "Shape")[0];
-	attributes.shape = g.getAttribute("type");
+	attributes.shape.type = g.getAttribute("type");
 	
 	return attributes;
 }
@@ -1462,7 +1468,7 @@ ShapeNode.prototype.createElement = function(attr) {
 	style.top = geometry.y+"px";
 	style.width = geometry.width+"px";
 	style.height = geometry.height+"px";
-	contentNode.appendChild( ShapeNode.switchShape(attr.shape, attr) );
+	contentNode.appendChild( ShapeNode.switchShape(attr.shape.type, attr) );
 	containerNode.appendChild(contentNode);
 	
 	//shape text
@@ -1533,7 +1539,7 @@ ShapeNode.switchShape = function(shape, attributes) {
 ShapeNode.ellipseShape = function(svg, shape, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -1564,7 +1570,7 @@ ShapeNode.ellipseShape = function(svg, shape, attr) {
 ShapeNode.rectangleShape = function(svg, shape, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var borderColor = borderStyle.borderColor;
@@ -1630,7 +1636,7 @@ ShapeNode.rectangleShape = function(svg, shape, attr) {
 ShapeNode.parallelogramShape = function(svg, shape, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height;
 	var w10 = w/10;
@@ -1665,7 +1671,7 @@ ShapeNode.parallelogramShape = function(svg, shape, attr) {
 ShapeNode.hexagonShape = function(svg, shape, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w10 = w/10;
 	var h = geometry.height, h2 = h/2;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -1701,7 +1707,7 @@ ShapeNode.hexagonShape = function(svg, shape, attr) {
 ShapeNode.triangleShape = function(svg, shape, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -1734,7 +1740,7 @@ ShapeNode.triangleShape = function(svg, shape, attr) {
 ShapeNode.trapezoidShape = function(svg, shape, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w4 = w/4;
 	var h = geometry.height;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -1777,7 +1783,7 @@ ShapeNode.trapezoidShape = function(svg, shape, attr) {
 ShapeNode.octagonShape = function(svg, shape, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w3 = w/3, w23 = 2*w3;
 	var h = geometry.height, h3 = h/3, h23 = 2*h3;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -1815,7 +1821,7 @@ ShapeNode.octagonShape = function(svg, shape, attr) {
 ShapeNode.diamondShape = function(svg, shape, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var ret = yWorks.setupLinearGradient(svg, {id:attr.id+'-gradient', width:w, height:h, color1:fill.color, color2:fill.color2});
@@ -2018,7 +2024,11 @@ GenericNode.switchConfiguration = function(configuration, attributes) {
 			break;
 		case "com.yworks.bpmn.Artifact":
 		case "com.yworks.bpmn.Artifact.withShadow":
-			GenericNode.switchArtifact(svg, configuration, attributes);
+			GenericNode.switchArtifact(svg, attributes);
+			break;
+		case "com.yworks.bpmn.Activity":
+		case "com.yworks.bpmn.Activity.withShadow":
+			GenericNode.createActivity(svg, configuration, attributes);
 			break;
 		default:
 			console.log("No graphics for "+attributes.id+"; please construct proper "+configuration+" element");
@@ -2031,11 +2041,11 @@ GenericNode.switchConfiguration = function(configuration, attributes) {
  * This hub function branches to the specific entity to be drawn in SVG.
  * @private
  * @static
- * @param {String} configuration - the name of the configuration to be drawn
+ * @param {SVGElement} svg - the container of the SVG data
  * @param {Object} attributes - other information essential to this function
  * @returns {SVGElement} the container of the SVG data
  */
-GenericNode.switchArtifact = function(svg, configuration, attributes) {
+GenericNode.switchArtifact = function(svg, attributes) {
 	var type = attributes.styleProperties["com.yworks.bpmn.type"];
 	switch(type) {
 		case "ARTIFACT_TYPE_DATA_OBJECT":
@@ -2050,6 +2060,9 @@ GenericNode.switchArtifact = function(svg, configuration, attributes) {
 			break;
 		case "ARTIFACT_TYPE_DATA_STORE":
 			GenericNode.createDataStore(svg, type, attributes);
+			break;
+		case "ARTIFACT_TYPE_GROUP":
+			GenericNode.createArtifactGroup(svg, type, attributes);
 			break;
 		default:
 			console.log("Missing type graphics for "+attributes.id+"; please construct proper "+configuration+" element");
@@ -2084,7 +2097,7 @@ GenericNode.switchGatewayDetails = function(svg, attr) {
 			break;
 		case "GATEWAY_TYPE_PARALLEL":
 		case "GATEWAY_TYPE_COMPLEX":
-			GenericNode.prototype.createGatewayComplexParallel(svg, type, attr);
+			GenericNode.createGatewayComplexParallel(svg, type, attr);
 			break;
 		default:
 			console.log("No graphics for "+attr.id+" characteristic - '"+type+"'");
@@ -2145,13 +2158,13 @@ GenericNode.switchEventCharacteristic = function(svg, attr) {
 GenericNode.switchEventEmblem = function(svg, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle1 = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var styleProperties = attr.styleProperties || attr;
 	
-	var cattr = { id:attr.id, geometry:geometry, fill:fill, borderStyle1:borderStyle1 };
-	cattr.bdColor = styleProperties["com.yworks.bpmn.icon.line.color"];
+	var cattr = { id:attr.id, geometry:geometry, fill:fill, borderStyle:borderStyle };
 	var type1 = attr.styleProperties["com.yworks.bpmn.characteristic"]; // Outline design
 	if(type1 == "EVENT_CHARACTERISTIC_INTERMEDIATE_THROWING" || type1 == "EVENT_CHARACTERISTIC_END") {
+		cattr.bdColor = "none";
 		cattr.bgColor = "black";
 		cattr.detailColor = "white";
 	}
@@ -2160,10 +2173,11 @@ GenericNode.switchEventEmblem = function(svg, attr) {
 		var h = geometry.height;
 		var color1 = styleProperties["com.yworks.bpmn.icon.fill"];
 		var color2 = styleProperties["com.yworks.bpmn.icon.fill2"];
+		cattr.bdColor = styleProperties["com.yworks.bpmn.icon.line.color"];
 		cattr.bgColor = yWorks.setupLinearGradient(svg, {id:attr.id+"_detail_gradient", x2:1, y2:1, width:w, height:h, color1:color1, color2:color2}).color;
 		cattr.detailColor = cattr.bdColor;
 	}
-	
+	// TODO: try to eliminate detailColor (as in EVENT_TYPE_TIMER and in EVENT_TYPE_CONDITIONAL)
 	var type2 = attr.styleProperties["com.yworks.bpmn.type"]; // Central emblem
 	switch(type2) {
 		case "EVENT_TYPE_PLAIN": // Nothing
@@ -2210,6 +2224,291 @@ GenericNode.switchEventEmblem = function(svg, attr) {
 }
 
 /**
+ * Select the activity type for an artifact entity.
+ * This hub function branches to the specific entity to be drawn in SVG, exclusive to artifact-type drawings.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container of the SVG data
+ * @param {Object} attr - other information essential to this function
+ */
+GenericNode.switchActivityType = function(svg, attr) {
+	var taskType = attr.styleProperties["com.yworks.bpmn.taskType"];
+	if(!taskType)
+		return;
+	
+	switch(taskType) {
+		case "TASK_TYPE_ABSTRACT": // Nothing
+			break;
+		case "TASK_TYPE_SEND":
+		case "TASK_TYPE_RECEIVE":
+			GenericNode.createActivityMessage(svg, taskType, attr);
+			break;
+		case "TASK_TYPE_USER":
+			GenericNode.createActivityUser(svg, taskType, attr);
+			break;
+		case "TASK_TYPE_MANUAL":
+			GenericNode.createActivityManual(svg, taskType, attr);
+			break;
+		case "TASK_TYPE_BUSINESS_RULE":
+			GenericNode.createActivityRule(svg, taskType, attr);
+			break;
+		case "TASK_TYPE_SERVICE":
+			GenericNode.createActivityService(svg, taskType, attr);
+			break;
+		case "TASK_TYPE_SCRIPT":
+			GenericNode.createActivityScript(svg, taskType, attr);
+			break;
+		default:
+			console.log("No graphics for "+attr.id+" emblem - '"+taskType+"'");
+	}
+}
+
+/**
+ * Select na
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.switchActivityMarker = function(svg, attr) {
+	var styleProperties = attr.styleProperties || attr;
+	// Allocate markers (max 4)
+	var markerList = [], marker = null;
+	if(marker = styleProperties["com.yworks.bpmn.marker1"])
+		markerList.push(marker);
+	if(marker = styleProperties["com.yworks.bpmn.marker2"])
+		markerList.push(marker);
+	if(marker = styleProperties["com.yworks.bpmn.marker3"])
+		markerList.push(marker);
+	if(marker = styleProperties["com.yworks.bpmn.marker4"])
+		markerList.push(marker);
+	
+	var cattr = {id:attr.id, geometry:attr.geometry, fill:attr.fill, borderStyle:attr.borderStyle, styleProperties:styleProperties};
+	cattr.x = 0;
+	
+	var j = markerList.length;
+	var markerSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	for(var i = 0; i < j; i++) {
+		marker = markerList[i];
+		switch(marker) {
+			case "BPMN_MARKER_OPEN":
+			case "BPMN_MARKER_CLOSED":
+				GenericNode.createActivityAccessMarker(markerSVG, marker, cattr);
+				break;
+			case "BPMN_MARKER_AD_HOC":
+				GenericNode.createActivityAdhocMarker(markerSVG, marker, cattr);
+				break;
+			case "BPMN_MARKER_COMPENSATION":
+				GenericNode.createActivityCompensationMarker(markerSVG, marker, cattr);
+				break;
+			case "BPMN_MARKER_LOOP":
+				GenericNode.createActivityLoopMarker(markerSVG, marker, cattr);
+				break;
+			case "BPMN_MARKER_PARALLEL":
+			case "BPMN_MARKER_SEQUENTIAL":
+				GenericNode.createActivityBarMarker(markerSVG, marker, cattr);
+				break;
+			default:
+				console.log("No graphics for "+attr.id+" marker - '"+marker+"'");
+		}
+		cattr.x += 20;
+	}
+	
+	// Position on larger SVG
+	var width = 15 + ((j-1)*20);
+	var x = (attr.geometry.width + width)/2 - width;
+	markerSVG.setAttributeNS(null, "height", 15);
+	markerSVG.setAttributeNS(null, "width", width);
+	markerSVG.setAttributeNS(null, "x", x);
+	markerSVG.setAttributeNS(null, "y", (attr.geometry.height - 20));
+	svg.appendChild(markerSVG);
+}
+
+/**
+ * Draw a na entity for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityAccessMarker = function(svg, type, attr) {
+	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
+	var x = attr.x || 0;
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var containerSVG = document.createElementNS(svgns, "svg");
+	containerSVG.setAttributeNS(null, "x", x);
+	containerSVG.setAttributeNS(null, "height", 15);
+	containerSVG.setAttributeNS(null, "width", 15);
+	
+	var rect = document.createElementNS(svgns, "rect"), style = null;
+	rect.setAttributeNS(null, "width", 15);
+	rect.setAttributeNS(null, "height", 15);
+	style = rect.style;
+	style.stroke = lineColor;
+	style.fill = "none";
+	containerSVG.appendChild(rect);
+	
+	var line = document.createElementNS(svgns, "line"); // Closed
+	line.setAttributeNS(null, "x1", 4);
+	line.setAttributeNS(null, "x2", 11);
+	line.setAttributeNS(null, "y1", 7.5);
+	line.setAttributeNS(null, "y2", 7.5);
+	style = line.style;
+	style.stroke = lineColor;
+	style.fill = "none";
+	containerSVG.appendChild(line);
+	
+	if(type == "BPMN_MARKER_OPEN") {
+		line = document.createElementNS(svgns, "line"); // Open
+		line.setAttributeNS(null, "x1", 7.5);
+		line.setAttributeNS(null, "x2", 7.5);
+		line.setAttributeNS(null, "y1", 4);
+		line.setAttributeNS(null, "y2", 11);
+		style = line.style;
+		style.stroke = lineColor;
+		style.fill = "none";
+		containerSVG.appendChild(line);
+	}
+	svg.appendChild(containerSVG);
+}
+
+/**
+ * Draw a na entity for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityAdhocMarker = function(svg, type, attr) {
+	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
+	var x = attr.x || 0;
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var containerSVG = document.createElementNS(svgns, "svg");
+	containerSVG.setAttributeNS(null, "x", x);
+	containerSVG.setAttributeNS(null, "height", 15);
+	containerSVG.setAttributeNS(null, "width", 15);
+	
+	var path = document.createElementNS(svgns, "path");
+	var d = "";
+	d += "M 2.25 7.5";
+	d += " L 12.75 7.5"; // TODO: turn this into a curve (~)
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = "none";
+	style.stroke = lineColor;
+	containerSVG.appendChild(path);
+	svg.appendChild(containerSVG);
+	
+}
+
+/**
+ * Draw a na entity for this element.
+ * Due to scaling issues, the BPMN event compensation emblem can not be reused for this BPMN activity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityCompensationMarker = function(svg, type, attr) {
+	var x = attr.x || 0;
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var containerSVG = document.createElementNS(svgns, "svg");
+	containerSVG.setAttributeNS(null, "x", x);
+	containerSVG.setAttributeNS(null, "y", 4);
+	containerSVG.setAttributeNS(null, "height", 15);
+	containerSVG.setAttributeNS(null, "width", 15);
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	d = "";
+	d += "M 7.5 0"; // Left triangle
+	d += " L 0 5.5";
+	d += " L 7.5 11";
+	d += " L 7.5 0 Z";
+	d += "M 15 0"; // Right triangle
+	d += " L 7.5 5.5";
+	d += " L 15 11";
+	d += " L 15 0 Z";
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = "none";
+	style.stroke = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
+	style["stroke-width"] = 1;
+	containerSVG.appendChild(path);
+	
+	svg.appendChild(containerSVG);
+}
+
+/**
+ * Draw a na entity for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityLoopMarker = function(svg, type, attr) {
+	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
+	var x = attr.x || 0;
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var containerSVG = document.createElementNS(svgns, "svg"), rect = null, style = null;
+	containerSVG.setAttributeNS(null, "x", x);
+	containerSVG.setAttributeNS(null, "height", 15);
+	containerSVG.setAttributeNS(null, "width", 15);
+	
+	var path = document.createElementNS(svgns, "path");
+	var d = "";
+	d += "M 7.5 14.5";
+	d += " A 7 7 0 1 0 2.5502525316941664 12.449747468305832"; // This is very specific
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = "none";
+	style.stroke = lineColor;
+	containerSVG.appendChild(path);
+	// TODO: arrow at 7.5 14.5 along the tangent of the line
+	svg.appendChild(containerSVG);
+}
+
+/**
+ * Draw a na entity for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityBarMarker = function(svg, type, attr) {
+	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
+	var x = attr.x || 0;
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var containerSVG = document.createElementNS(svgns, "svg"), rect = null, style = null;
+	containerSVG.setAttributeNS(null, "x", x);
+	containerSVG.setAttributeNS(null, "height", 15);
+	containerSVG.setAttributeNS(null, "width", 15);
+	
+	for(var i = 0; i < 3; i++) { // Three bars, vertically from 0-3, 6-9, 12-15 for BPMN_MARKER_SEQUENTIAL
+		rect = document.createElementNS(svgns, "rect");
+		rect.setAttributeNS(null, "y", i*6);
+		rect.setAttributeNS(null, "width", 15);
+		rect.setAttributeNS(null, "height", 3);
+		style = rect.style;
+		style.fill = lineColor;
+		style.stroke = lineColor;
+		containerSVG.appendChild(rect);
+	}
+	if(type == "BPMN_MARKER_PARALLEL")
+		containerSVG.setAttributeNS(null, "transform", "rotate(90 7.5 7.5)");
+	svg.appendChild(containerSVG);
+}
+
+/**
  * Draw a circle flowchart entity for this element.
  * @private
  * @static
@@ -2220,7 +2519,7 @@ GenericNode.switchEventEmblem = function(svg, attr) {
 GenericNode.createFlowChartCircle = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var rx = Math.min(w2, h2);
@@ -2273,7 +2572,7 @@ GenericNode.createFlowChartCircle = function(svg, configuration, attr) {
 GenericNode.createFlowChartTerminator = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2331,7 +2630,7 @@ GenericNode.createFlowChartTerminator = function(svg, configuration, attr) {
 GenericNode.createFlowChartRectangle = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2405,7 +2704,7 @@ GenericNode.createFlowChartRectangle = function(svg, configuration, attr) {
 GenericNode.createFlowChartShavedCornerRectangle = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2459,7 +2758,7 @@ GenericNode.createFlowChartShavedCornerRectangle = function(svg, configuration, 
 GenericNode.createFlowChartShavedSideRectangle = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height, h2 = h/2;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2513,7 +2812,7 @@ GenericNode.createFlowChartShavedSideRectangle = function(svg, configuration, at
 GenericNode.createFlowChartAngledTopRectangle = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2549,7 +2848,7 @@ GenericNode.createFlowChartCurvedRectangle = function(svg, configuration, attr) 
 	// TODO: rewrite these curves
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height, h2 = h/2;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2599,7 +2898,7 @@ GenericNode.createFlowChartCurvedSideRectangle = function(svg, configuration, at
 	// TODO: rewrite these curves
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height, h3 = h/3;
 	var n = 4.5, n15 = 1.5 * n;
@@ -2657,7 +2956,7 @@ GenericNode.createFlowChartCurvedSideRectangle = function(svg, configuration, at
 GenericNode.createFlowChartSpecialRectangle = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w9 = w/9;
 	var h = geometry.height;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2696,7 +2995,7 @@ GenericNode.createFlowChartDisplay = function(svg, configuration, attr) {
 	// TODO: rewrite these curves
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w1 = w*0.5, w3 = 0.12*w, w2 = w - w1 - w3;
 	var h = geometry.height, h2 = h/2, h3 = h/3;
 	var rat = h/w;
@@ -2742,7 +3041,7 @@ GenericNode.createFlowChartCylinder = function(svg, configuration, attr) {
 	// TODO: rewrite these curves
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w8 = w/8, w28 = 2*w8, w68 = 6*w8;
 	var h = geometry.height, h6 = h/6;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2788,7 +3087,7 @@ GenericNode.createFlowChartCylinder = function(svg, configuration, attr) {
 GenericNode.createFlowChartDiamond = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2823,7 +3122,7 @@ GenericNode.createFlowChartParallelogram = function(svg, configuration, attr) {
 	// TODO: scaling is probably not correct
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var n = 9;
@@ -2859,7 +3158,7 @@ GenericNode.createFlowChartTrapazoid = function(svg, configuration, attr) {
 	// TODO: scaling is probably not correct
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height;
 	var n = 9;
@@ -2895,7 +3194,7 @@ GenericNode.createFlowChartPentagon = function(svg, configuration, attr) {
 	// TODO: scaling is probably not correct
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w4 = w/4, w34 = 3*w4;
 	var h = geometry.height, h2 = h/2;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -2964,7 +3263,7 @@ GenericNode.createFlowChartCloud = function(svg, configuration, attr) {
 GenericNode.createEntityAttribute = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2, cx = w2 + 0.5, rx = w2;
 	var h = geometry.height, h2 = h/2, cy = h2 + 0.5, ry = h2;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -3009,7 +3308,7 @@ GenericNode.createEntityAttribute = function(svg, configuration, attr) {
 GenericNode.createEntitySmall = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -3052,7 +3351,7 @@ GenericNode.createEntityBig = function(svg, configuration, attr) {
 	// TODO: scaling is probably not correct
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height;
 	var header = h > 23;
@@ -3106,7 +3405,7 @@ GenericNode.createEntityRelationship = function(svg, configuration, attr) {
 	// TODO: scaling is probably not correct
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -3157,7 +3456,7 @@ GenericNode.createEntityRelationship = function(svg, configuration, attr) {
 GenericNode.createGateway = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var len = Math.min(w, h)/2;
@@ -3193,7 +3492,7 @@ GenericNode.createGateway = function(svg, configuration, attr) {
 GenericNode.createEvent = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
 	var len = Math.min(w, h)/2;
@@ -3223,7 +3522,7 @@ GenericNode.createEvent = function(svg, configuration, attr) {
 GenericNode.createConversation = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2, w21 = w2 + 1;
 	var h = geometry.height, h2 = h/2, h21 = h2 + 1;
 	var len = Math.min(w, h), len2 = Math.min(w2, h2), len4 = len/4, lenh = 0.866 * len2; // cos30
@@ -3260,7 +3559,7 @@ GenericNode.createConversation = function(svg, configuration, attr) {
 GenericNode.createArtifactDataObject = function(svg, type, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2, w21 = w2 + 1;
 	var h = geometry.height, h2 = h/2, h21 = h2 + 1;
 	var color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:fill.color, color2:fill.color2}).color;
@@ -3370,14 +3669,13 @@ GenericNode.createArtifactDataObject = function(svg, type, attr) {
 GenericNode.createArtifactMessage = function(svg, type, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var x = attr.x || 1;
 	var y = attr.y || 1;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
-	var dashed = yWorks.createSVGLinePattern(borderStyle.borderStyle, borderStyle.borderWidth);
-	var color = attr.bgColor;
-	if(!color) {
+	var bgColor = attr.bgColor;
+	if(!bgColor) {
 		var color1 = fill.color;
 		var color2 = fill.color2;
 		if(type.search("REPLY") != -1) { // Tint the background color darker
@@ -3392,34 +3690,419 @@ GenericNode.createArtifactMessage = function(svg, type, attr) {
 				color2 = yWorks.colorAndOpacity(color2, ret.opacity).color;
 			}
 		}
-		color = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:color1, color2:color2}).color;
+		bgColor = yWorks.setupLinearGradient(svg, {id:attr.id+"-gradient", width:w, height:h, color1:color1, color2:color2}).color;
 	}
+	var bdColor = attr.bdColor || borderStyle.borderColor;
 	
 	var svgns = "http://www.w3.org/2000/svg";
-	var rect = document.createElementNS(svgns, "rect"), style = null; // Envelope outline
-	rect.setAttributeNS(null, "x", x);
-	rect.setAttributeNS(null, "y", y);
-	rect.setAttributeNS(null, "width", w);
-	rect.setAttributeNS(null, "height", h);
-	rect.setAttributeNS(null, "stroke-dasharray", dashed);
-	style = rect.style;
-	style.fill = color;
-	style.stroke = attr.bdColor || borderStyle.borderColor;
-	style["stroke-width"] = borderStyle.borderWidth;
-	svg.appendChild(rect);
-	
-	var path = document.createElementNS(svgns, "path") // Envelope fold
-	var d = "";
-	d += "M "+(x)+" "+(y);
-	d += " L "+(x+w2)+" "+(y+h2);
-	d += " L "+(x+w)+" "+(y);
+	var path = null, d = null, style = null;
+	path = document.createElementNS(svgns, "path"); // Upper portion
+	d = "";
+	d += "M "+(x+w-0.5)+" "+(y+0.5);
+	d += " L "+(x+0.5)+" "+(y+0.5);
+	d += " L "+(x+w2)+" "+(y+h2-0.5);
+	d += " L "+(x+w-0.5)+" "+(y+0.5)+" Z";
 	path.setAttributeNS(null, "d", d);
-	rect.setAttributeNS(null, "stroke-dasharray", dashed);
+	style = path.style;
+	style.fill = bgColor;
+	style.stroke = "none";
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+	
+	path = document.createElementNS(svgns, "path"); // Lower portion
+	d = "";
+	d += "M "+(x+w-0.5)+" "+(y+1);
+	d += " L "+(x+w2)+" "+(y+h2+0.5);
+	d += " L "+(x+0.5)+" "+(y+1);
+	d += " L "+(x+0.5)+" "+(y+h-0.5);
+	d += " L "+(x+w-0.5)+" "+(y+h-0.5);
+	d += " L "+(x+w-0.5)+" "+(y+1)+" Z";
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = bgColor;
+	style.stroke = "none";
+	style["stroke-width"] = 0;
+	svg.appendChild(path);
+	
+	path = document.createElementNS(svgns, "path"); // Outline
+	d = "";
+	d += "M "+(x+w)+" "+(y);
+	d += " L "+(x)+" "+(y);
+	d += " L "+(x)+" "+(y+h);
+	d += " L "+(x+w)+" "+(y+h);
+	d += " L "+(x+w)+" "+(y)+" Z";
+	d += "M "+(x+w)+" "+(y);
+	d += " L "+(x+w2)+" "+(y+h2);
+	d += " L "+(x)+" "+(y);
+	path.setAttributeNS(null, "d", d);
 	style = path.style;
 	style.fill = "none";
-	style.stroke = attr.detailColor || borderStyle.borderColor;
-	style["stroke-width"] = borderStyle.borderWidth;
+	style.stroke = bdColor;
+	style["stroke-width"] = 1;
 	svg.appendChild(path);
+}
+
+/**
+ * Draw a business process model group for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createArtifactGroup = function(svg, type, attributes) {
+	var geometry = attributes.geometry || attributes;
+	var borderStyle = attributes.borderStyle || attributes;
+	ShapeNode.rectangleShape(svg, "roundrectangle", {id:attributes.id, geometry:geometry, fill:{color:"none"}, borderStyle:borderStyle});
+}
+
+/**
+ * Draw a business process model activity for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivity = function(svg, type, attr) {
+	var geometry = attr.geometry || attr;
+	var w = geometry.width;
+	var h = geometry.height;
+	
+	ShapeNode.rectangleShape(svg, "roundrectangle", attr);
+	GenericNode.switchActivityType(svg, attr);
+	GenericNode.switchActivityMarker(svg, attr);
+}
+
+/**
+ * Draw an activity send and receive message entity for this element.
+ * It looks like an envelope.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityMessage = function(svg, type, attr) {
+	var bdColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"];
+	var bgColor = "white";
+	if(type == "TASK_TYPE_SEND") {
+		bgColor = bdColor;
+		bdColor = "none";
+	}
+	GenericNode.createArtifactMessage(svg, "", {
+		id:attr.id,
+		x:5,
+		y:12,
+		geometry:{width:20, height:13},
+		fill:attr.fill,
+		borderStyle:attr.borderStyle,
+		bgColor:bgColor,
+		bdColor:bdColor
+	});
+}
+
+/**
+ * Draw an activity user entity for this element.
+ * It looks like a person's bust.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityUser = function(svg, type, attr) {
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = ""; // TODO: needs application of curves
+	d += "M 7 7.75";
+	d += " A 0 0 0 0 0 5.75 9";
+	d += " A 0 0 0 0 0 0 14.5";
+	d += " L 0 20";
+	d += " L 20 20";
+	d += " L 20 14.5";
+	d += " A 0 0 0 0 0 14.25 9";
+	d += " A 0 0 0 0 0 13 7.75";
+	d += " C 19.75 -2.5 0.25 -2.5 7 7.75 Z";
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = "white";
+	style.stroke = "black";
+	svg.appendChild(path);
+}
+
+/**
+ * Draw an activity manual entity for this element.
+ * It looks like a hand.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityManual = function(svg, type, attr) {
+	var svgns = "http://www.w3.org/2000/svg";
+	
+	var path = document.createElementNS(svgns, "path"), line = null, style = null;
+	var d = ""; // TODO: needs application of curves
+	d += "M 11.5 0"; // Thumb
+	d += " L 3.25 0";
+	d += " L 0 3";
+	d += " L 0 11";
+	d += " L 2 12.5";
+	d += " L 15.5 12.5"; // Pinky
+	d += " L 15.5 10";
+	d += " L 17.25 10"; // Ring
+	d += " L 17.25 7.5";
+	d += " L 18 7.5"; // Middle
+	d += " L 18 5";
+	d += " L 18.75 5"; // Index
+	d += " L 18.75 2.5";
+	d += " L 9.25 2.5"; // Nook of palm
+	d += " L 11.5 0 Z"; // Rejoin
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = "white";
+	style.stroke = "black";
+	svg.appendChild(path);
+	
+	//Lines that define the fingers
+	line = document.createElementNS(svgns, "line"); // Thumb, Index
+	line.setAttributeNS(null, "x1", 5.19);
+	line.setAttributeNS(null, "x2", 9.25);
+	line.setAttributeNS(null, "y1", 2.5);
+	line.setAttributeNS(null, "y2", 2.5);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line);
+	line = document.createElementNS(svgns, "line"); // Index, Middle
+	line.setAttributeNS(null, "x1", 9.3);
+	line.setAttributeNS(null, "x2", 18);
+	line.setAttributeNS(null, "y1", 5);
+	line.setAttributeNS(null, "y2", 5);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line);
+	line = document.createElementNS(svgns, "line"); // Middle,Ring
+	line.setAttributeNS(null, "x1", 10.5);
+	line.setAttributeNS(null, "x2", 17.25);
+	line.setAttributeNS(null, "y1", 7.5);
+	line.setAttributeNS(null, "y2", 7.5);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line);
+	line = document.createElementNS(svgns, "line"); // Ring, Pinky
+	line.setAttributeNS(null, "x1", 9.85);
+	line.setAttributeNS(null, "x2", 15.5);
+	line.setAttributeNS(null, "y1", 10);
+	line.setAttributeNS(null, "y2", 10);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line);
+}
+
+/**
+ * Draw an activity rule entity for this element.
+ * It looks like blocky HTML.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityRule = function(svg, type, attr) {
+	var svgns = "http://www.w3.org/2000/svg";
+	
+	var rect = null, line = null, style = null;
+	rect = document.createElementNS(svgns, "rect"); // Top field box
+	rect.setAttributeNS(null, "width", 20);
+	rect.setAttributeNS(null, "height", 3.5);
+	style = rect.style;
+	style.fill = "#c0c0c0";
+	style.stroke = "black";
+	svg.appendChild(rect);
+	rect = document.createElementNS(svgns, "rect"); // Lower field box
+	rect.setAttributeNS(null, "y", 3.5);
+	rect.setAttributeNS(null, "width", 20);
+	rect.setAttributeNS(null, "height", 11.25);
+	style = rect.style;
+	style.fill = "white";
+	style.stroke = "black";
+	svg.appendChild(rect);
+	
+	line = document.createElementNS(svgns, "line"); // Vertical division bar
+	line.setAttributeNS(null, "x1", 5.25);
+	line.setAttributeNS(null, "x2", 5.25);
+	line.setAttributeNS(null, "y1", 3.5);
+	line.setAttributeNS(null, "y2", 14.75);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line);
+	line = document.createElementNS(svgns, "line"); // Horizontal division bar
+	line.setAttributeNS(null, "x1", 0);
+	line.setAttributeNS(null, "x2", 20);
+	line.setAttributeNS(null, "y1", 9.125);
+	line.setAttributeNS(null, "y2", 9.125);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line); /* */
+}
+
+/**
+ * Draw an activity service entity for this element.
+ * It looks like two gears, one superimposed over the other.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityService = function(svg, type, attr) {
+	var svgns = "http://www.w3.org/2000/svg";
+	
+	var svg1 = document.createElementNS(svgns, "svg");
+	svg1.setAttributeNS(null, "x", 5);
+	svg1.setAttributeNS(null, "y", 5);
+	svg1.setAttributeNS(null, "height", 15.65);
+	GenericNode.createActivityServiceGear(svg1);
+	svg.appendChild(svg1);
+	
+	var svg2 = document.createElementNS(svgns, "svg");
+	svg2.setAttributeNS(null, "x", 10);
+	svg2.setAttributeNS(null, "y", 10);
+	svg2.setAttributeNS(null, "width", 15.65);
+	svg2.setAttributeNS(null, "height", 15.65);
+	GenericNode.createActivityServiceGear(svg2);
+	svg.appendChild(svg2);
+}
+
+/**
+ * Draw an activity service gear.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ */
+GenericNode.createActivityServiceGear = function(svg) {
+	var svgns = "http://www.w3.org/2000/svg";
+	
+	var path = document.createElementNS(svgns, "path"), style = null;
+	var d = "";
+	d += "M 15.650 6.575"; // Right spoke top
+	d += " L 12.850 6.575";
+	d += " L 12.268 5.142";
+	d += " L 14.238 3.172"; // Q1 spoke bottom
+	d += " L 12.478 1.412"; // Q1 spoke top
+	d += " L 10.508 3.382";
+	d += " L 9.075 2.800";
+	d += " L 9.075 0.000"; // Top spoke right
+	d += " L 6.575 0.000"; // Top spoke left
+	d += " L 6.575 2.800";
+	d += " L 5.142 3.382";
+	d += " L 3.172 1.412"; // Q2 spoke top
+	d += " L 1.412 3.172"; // Q2 spoke bottom
+	d += " L 3.382 5.142";
+	d += " L 2.800 6.575";
+	d += " L 0.000 6.575"; // Left spoke top
+	d += " L 0.000 9.075"; // Left spoke bottom
+	d += " L 2.800 9.075";
+	d += " L 3.382 10.508";
+	d += " L 1.412 12.478"; // Q3 spoke top
+	d += " L 3.172 14.238"; // Q3 spoke bottom
+	d += " L 5.142 12.268";
+	d += " L 6.575 12.850";
+	d += " L 6.575 15.650"; // Bottom spoke left
+	d += " L 9.075 15.650"; // Bottom spoke right
+	d += " L 9.075 12.850";
+	d += " L 10.508 12.268";
+	d += " L 12.478 14.238"; // Q4 spoke bottom
+	d += " L 14.238 12.478"; // Q4 spoke top
+	d += " L 12.268 10.508";
+	d += " L 12.850 9.075";
+	d += " L 15.650 9.075"; // Right spoke bottom
+	d += " L 15.650 6.575 Z"; // Rejoin
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = "white";
+	style.stroke = "black";
+	svg.appendChild(path);
+	
+	var circle = document.createElementNS(svgns, "circle")
+	circle.setAttributeNS(null, "cx", 7.825);
+	circle.setAttributeNS(null, "cy", 7.825);
+	circle.setAttributeNS(null, "r", 2.725);
+	style = circle.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(circle);
+}
+
+/**
+ * Draw an activity script entity for this element.
+ * It looks like a sheet of paper with writing on it.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityScript = function(svg, type, attr) {
+	var svgns = "http://www.w3.org/2000/svg";
+	
+	var path = document.createElementNS(svgns, "path"), line = null, style = null;
+	var d = ""; // TODO: needs application of curves
+	d += "M 20 0";
+	d += " L 5.85 0";
+	d += " L 0 20";
+	d += " L 14.15 20";
+	d += " L 20 0 Z";
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = "white";
+	style.stroke = "black";
+	svg.appendChild(path);
+	
+	//Text lines
+	line = document.createElementNS(svgns, "line");
+	line.setAttributeNS(null, "x1", 3.75);
+	line.setAttributeNS(null, "x2", 12.65);
+	line.setAttributeNS(null, "y1", 4);
+	line.setAttributeNS(null, "y2", 4);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line);
+	line = document.createElementNS(svgns, "line");
+	line.setAttributeNS(null, "x1", 4.725);
+	line.setAttributeNS(null, "x2", 6.6);
+	line.setAttributeNS(null, "y1", 8);
+	line.setAttributeNS(null, "y2", 8);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line);
+	line = document.createElementNS(svgns, "line");
+	line.setAttributeNS(null, "x1", 6.5);
+	line.setAttributeNS(null, "x2", 15.25);
+	line.setAttributeNS(null, "y1", 12);
+	line.setAttributeNS(null, "y2", 12);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line);
+	line = document.createElementNS(svgns, "line");
+	line.setAttributeNS(null, "x1", 7.25);
+	line.setAttributeNS(null, "x2", 16);
+	line.setAttributeNS(null, "y1", 16);
+	line.setAttributeNS(null, "y2", 16);
+	style = line.style;
+	style.fill = "none";
+	style.stroke = "black";
+	svg.appendChild(line);
 }
 
 /**
@@ -3427,13 +4110,13 @@ GenericNode.createArtifactMessage = function(svg, type, attr) {
  * @private
  * @static
  * @param {SVGElement} svg - the container for this drawing
- * @param {String} configuration - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
+ * @param {String} type - the specific configuration of the entity being drawn (multiple may be pooled by common strokes)
  * @param {String} attr - other information essential to this function
  */
 GenericNode.createDataStore = function(svg, type, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2, h8 = h/8, h82 = h8/2, h78 = 7*h8;
 	var y = h8;
@@ -3651,7 +4334,7 @@ GenericNode.createGatewayEventExclusive = function(svg, type, attr) {
  * @param {String} type - the specific type of the entity being drawn (multiple may be pooled by common strokes)
  * @param {Object} attr - other information essential to this function
  */
-GenericNode.prototype.createGatewayComplexParallel = function(svg, type, attr) {
+GenericNode.createGatewayComplexParallel = function(svg, type, attr) {
 	var geometry = attr.geometry || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2;
@@ -3691,7 +4374,7 @@ GenericNode.prototype.createGatewayComplexParallel = function(svg, type, attr) {
  */
 GenericNode.createEventStart = function(svg, type, attr) {
 	var geometry = attr.geometry || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2 + 1;
 	var h = geometry.height, h2 = h/2 + 1;
 	var len = Math.min(w, h), len2 = len/2;
@@ -3724,7 +4407,7 @@ GenericNode.createEventStart = function(svg, type, attr) {
  */
 GenericNode.createEventIntermediate = function(svg, type, attr) {
 	var geometry = attr.geometry || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2 + 1;
 	var h = geometry.height, h2 = h/2 + 1;
 	var len = Math.min(w, h), len2 = len/2, len23 = len2 - 3;
@@ -3771,7 +4454,7 @@ GenericNode.createEventIntermediate = function(svg, type, attr) {
  */
 GenericNode.createEventEnd = function(svg, type, attr) {
 	var geometry = attr.geometry || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2 + 1;
 	var h = geometry.height, h2 = h/2 + 1;
 	var len = Math.min(w, h), len2 = len/2;
@@ -3806,10 +4489,9 @@ GenericNode.createEventMessage = function(svg, type, attr) {
 		y:my,
 		geometry:{width:mw, height:mh},
 		fill:attr.fill,
-		borderStyle1:attr.borderStyle1,
+		borderStyle:attr.borderStyle,
 		bgColor:attr.bgColor,
-		bdColor:attr.bdColor,
-		detailColor:attr.detailColor
+		bdColor:attr.bdColor
 	});
 }
 
@@ -4251,7 +4933,7 @@ GenericNode.createEventConditional = function(svg, type, attr) {
 GenericNode.createPlate = function(svg, configuration, attr) {
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width;
 	var h = geometry.height;
 	var c = 5; // orig 10, corner scaling is severe
@@ -4325,7 +5007,7 @@ GenericNode.createBevel = function(svg, configuration, attr) {
 	// TODO: scaling is probably wrong
 	var geometry = attr.geometry || attr;
 	var fill = attr.fill || attr;
-	var borderStyle = attr.borderStyle1 || attr;
+	var borderStyle = attr.borderStyle || attr;
 	var w = geometry.width, w2 = w/2;
 	var h = geometry.height, h2 = h/2, h8 = h/8, h82 = h8/2, h78 = 7*h8;
 	var c = 5; // orig 10, corner scaling is severe
@@ -4598,7 +5280,7 @@ function ProxyAutoBoundsNode(id, attributes) {
  */
 ProxyAutoBoundsNode.prototype.getBounds = function() {
 	var attr = this.data;
-	var group = attr.groups[attr.active];
+	var group = attr.groups[attr.realizers.active];
 	var obj = {};
 	if(!group) { // TODO: unwarranted failsafe
 		obj = yWorksRepresentation.prototype.getBounds();
@@ -4617,32 +5299,37 @@ ProxyAutoBoundsNode.prototype.getBounds = function() {
  * Provide updated two-dimensional coordinates and span for this element.
  * @override
  */
-ProxyAutoBoundsNode.prototype.setBounds = function(bounds, increment) {
+ProxyAutoBoundsNode.prototype.setBounds = function(bounds) {
 	var attr = this.data;
-	var group = attr.groups[attr.active];
-	if(!group)
-		return;
-	
+	var group = attr.groups[attr.realizers.active];
 	var geometry = group.geometry;
-	if(increment) {
-		if("x" in bounds)
-			geometry.x += bounds.x;
-		if("y" in bounds)
-			geometry.y += bounds.y;
-		if("width" in bounds)
-			geometry.width += bounds.width;
-		if("height" in bounds)
-			geometry.height += bounds.height;
-	}
-	else {
-		if("x" in bounds)
-			geometry.x = bounds.x;
-		if("y" in bounds)
-			geometry.y = bounds.y;
-		if("width" in bounds)
-			geometry.width = bounds.width;
-		if("height" in bounds)
-			geometry.height = bounds.height;
+	if("x" in bounds)
+		geometry.x = bounds.x;
+	if("y" in bounds)
+		geometry.y = bounds.y;
+	if("width" in bounds)
+		geometry.width = bounds.width;
+	if("height" in bounds)
+		geometry.height = bounds.height;
+}
+
+/**
+ *
+ */
+ProxyAutoBoundsNode.prototype.shift = function(dx, dy) {
+	dx = dx || 0;
+	dy = dy || 0;
+	
+	var attr = this.data;
+	var group = attr.groups[attr.realizers.active];
+	var geometry = group.geometry;
+	geometry.x += dx;
+	geometry.y += dy;
+	
+	var labels = group.nodeLabels || [];
+	for(var i = 0, j = labels.length; i < j; i++) {
+		labels[i].x += dx;
+		labels[i].y += dy;
 	}
 }
 
@@ -4702,11 +5389,13 @@ ProxyAutoBoundsNode.prototype.readXML = function(xml) {
 		var group = {};
 		var gi = gElems[i];
 		group.id = id+"-"+i;
+		group.configuration = gi.getAttribute("configuration");
 		yWorks.getCommonFields(group, gi);
 		yWorks.getLabels(group, gi);
 		ProxyAutoBoundsNode.getStateAndInsets(group, gi);
 		var section = gi.getElementsByTagNameNS(yuri, "Shape")[0], field = null;
-		group.shape = section.getAttribute("type");
+		group.shape = {};
+		group.shape.type = section.getAttribute("type");
 		groups.push(group);
 	}
 	if(groups.length) {
@@ -4720,6 +5409,7 @@ ProxyAutoBoundsNode.prototype.readXML = function(xml) {
 		var group = {};
 		var gi = gElems[i];
 		group.id = id+"-"+i;
+		group.configuration = gi.getAttribute("configuration");
 		yWorks.getCommonFields(group, gi);
 		yWorks.getStyleProperties(group, gi);
 		yWorks.getLabels(group, gi);
@@ -4751,7 +5441,7 @@ ProxyAutoBoundsNode.prototype.createElement = function(attr) {
 		if(attr.nodeType == "GroupNodes") {
 			var geometry = group.geometry;
 			var fill = group.fill;
-			var borderStyle = group.borderStyle1;
+			var borderStyle = group.borderStyle;
 			
 			contentNode = document.createElement("div"), style = null;
 			contentNode.id = id+"-shape";
@@ -4762,11 +5452,19 @@ ProxyAutoBoundsNode.prototype.createElement = function(attr) {
 			style.width = geometry.width+"px";
 			style.height = geometry.height+"px";
 			
-			var svgns = "http://www.w3.org/2000/svg";
+			contentNode.appendChild( ShapeNode.switchShape(group.shape.type, {id:id+"-background", geometry:geometry, borderStyle:{borderStyle:"none"}, fill:fill}) );
+			var svg = ShapeNode.switchShape(group.shape.type, {id:id+"-outline", geometry:geometry, borderStyle:borderStyle});
+			svg.style.position = "absolute";
+			svg.style.left = "0px";
+			contentNode.appendChild(svg);
+			
+			/* var svgns = "http://www.w3.org/2000/svg";
 			var svg = document.createElementNS(svgns, "svg");
-			svg.setAttributeNS(null, "width", geometry.width);
-			svg.setAttributeNS(null, "height", geometry.height);
-			svg.appendChild( ShapeNode.switchShape(group.shape, group) );
+			svg.setAttributeNS(null, "width", 20);
+			svg.setAttributeNS(null, "height", 20);
+			style = svg.style;
+			style.position = "absolute";
+			style.left = "0px";
 			var stateBox = document.createElementNS(svgns, "rect");
 			stateBox.setAttributeNS(null, "x", 4);
 			stateBox.setAttributeNS(null, "y", 4);
@@ -4777,13 +5475,10 @@ ProxyAutoBoundsNode.prototype.createElement = function(attr) {
 			style.stroke = "#1a1a1a";
 			style["stroke-width"] = 0.5;
 			svg.appendChild(stateBox);
-			contentNode.appendChild(svg);
+			groupNode.appendChild(svg); */
 		}
 		else {
 			var geometry = group.geometry;
-			var fill = group.fill;
-			var borderStyle = group.borderStyle1;
-			
 			contentNode = document.createElement("div"), style = null;
 			contentNode.id = id+"-shape";
 			contentNode.className = "yWorks proxy shape";
@@ -4793,11 +5488,11 @@ ProxyAutoBoundsNode.prototype.createElement = function(attr) {
 			style.width = geometry.width+"px";
 			style.height = geometry.height+"px";
 			
-			contentNode.appendChild( ShapeNode.switchShape("roundrectangle", group) );
-			//console.log("No graphics for "+attr.id+"; please construct proper "+attr.nodeType+" element");
+			var activity = GenericNode.switchConfiguration(group.configuration, group);
+			contentNode.appendChild(activity);
 		}
 		groupNode.appendChild(contentNode);
-		//yWorks.createLabels(group, groupNode);
+		yWorks.createLabels(group, groupNode);
 		containerNode.appendChild(groupNode);
 		if(i != active)
 			groupNode.style.visibility = "hidden";
@@ -4895,7 +5590,7 @@ TableNode.prototype.createElement = function(attr) {
 	attr = attr || this.data;
 	var geometry = attr.geometry;
 	var fill = attr.fill;
-	var borderStyle = attr.borderStyle1;
+	var borderStyle = attr.borderStyle;
 	var styleProperties = attr.styleProperties;
 	var w = geometry.width;
 	var h = geometry.height;
@@ -5029,6 +5724,36 @@ PolyLineEdge.prototype = new yWorksRepresentation();
 PolyLineEdge.prototype.constructor = PolyLineEdge;
 function PolyLineEdge(id, attributes) {
 	yWorksRepresentation.call(this, id,attributes);
+}
+
+/**
+ *
+ */
+PolyLineEdge.prototype.shift = function(dx, dy) {
+	dx = dx || 0;
+	dy = dy || 0;
+	
+	var attr = this.data;
+	var points = attr.points;
+	for(var i = 0, j = points.length; i < j; i++) {
+		points[i].x += dx;
+		points[i].y += dy;
+	}
+	
+	// Move over clipped end coordinates, if they exist
+	var endpoints = attr.endpoints;
+	if(endpoints) {
+		endpoints.source.x += dx;
+		endpoints.source.y += dy;
+		endpoints.target.x += dx;
+		endpoints.target.y += dy;
+	}
+	
+	var labels = attr.nodeLabels || [];
+	for(var i = 0, j = labels.length; i < j; i++) {
+		labels[i].x += dx;
+		labels[i].y += dy;
+	}
 }
 
 /**
