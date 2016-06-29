@@ -2236,31 +2236,43 @@ GenericNode.switchActivityType = function(svg, attr) {
 	if(!taskType)
 		return;
 	
+	var svgns = "http://www.w3.org/2000/svg";
+	var containerSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	containerSVG.setAttributeNS(null, "x", 5);
+	containerSVG.setAttributeNS(null, "y", 5);
+	containerSVG.setAttributeNS(null, "height", 25);
+	containerSVG.setAttributeNS(null, "width", 25);
+	
 	switch(taskType) {
 		case "TASK_TYPE_ABSTRACT": // Nothing
 			break;
 		case "TASK_TYPE_SEND":
 		case "TASK_TYPE_RECEIVE":
-			GenericNode.createActivityMessage(svg, taskType, attr);
+			containerSVG.setAttributeNS(null, "x", 4);
+			containerSVG.setAttributeNS(null, "y", 8);
+			GenericNode.createActivityMessage(containerSVG, taskType, attr);
 			break;
 		case "TASK_TYPE_USER":
-			GenericNode.createActivityUser(svg, taskType, attr);
+			GenericNode.createActivityUser(containerSVG, taskType, attr);
 			break;
 		case "TASK_TYPE_MANUAL":
-			GenericNode.createActivityManual(svg, taskType, attr);
+			containerSVG.setAttributeNS(null, "y", 9);
+			GenericNode.createActivityManual(containerSVG, taskType, attr);
 			break;
 		case "TASK_TYPE_BUSINESS_RULE":
-			GenericNode.createActivityRule(svg, taskType, attr);
+			containerSVG.setAttributeNS(null, "y", 7.25);
+			GenericNode.createActivityRule(containerSVG, taskType, attr);
 			break;
 		case "TASK_TYPE_SERVICE":
-			GenericNode.createActivityService(svg, taskType, attr);
+			GenericNode.createActivityService(containerSVG, taskType, attr);
 			break;
 		case "TASK_TYPE_SCRIPT":
-			GenericNode.createActivityScript(svg, taskType, attr);
+			GenericNode.createActivityScript(containerSVG, taskType, attr);
 			break;
 		default:
-			console.log("No graphics for "+attr.id+" emblem - '"+taskType+"'");
+			console.log("No graphics for "+attr.id+" type - '"+taskType+"'");
 	}
+	svg.appendChild(containerSVG);
 }
 
 /**
@@ -2283,229 +2295,50 @@ GenericNode.switchActivityMarker = function(svg, attr) {
 	if(marker = styleProperties["com.yworks.bpmn.marker4"])
 		markerList.push(marker);
 	
-	var cattr = {id:attr.id, geometry:attr.geometry, fill:attr.fill, borderStyle:attr.borderStyle, styleProperties:styleProperties};
-	cattr.x = 0;
-	
+	var containerSVG = null;
 	var j = markerList.length;
-	var markerSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-	for(var i = 0; i < j; i++) {
+	var svgns = "http://www.w3.org/2000/svg";
+	var markerSVG = document.createElementNS(svgns, "svg");
+	for(var i = 0, x = 0; i < j; i++) {		
+		containerSVG = document.createElementNS(svgns, "svg");
+		containerSVG.setAttributeNS(null, "x", x);
+		containerSVG.setAttributeNS(null, "height", 15);
+		containerSVG.setAttributeNS(null, "width", 15);
+		
 		marker = markerList[i];
 		switch(marker) {
 			case "BPMN_MARKER_OPEN":
 			case "BPMN_MARKER_CLOSED":
-				GenericNode.createActivityAccessMarker(markerSVG, marker, cattr);
+				GenericNode.createActivityAccessMarker(containerSVG, marker, attr);
 				break;
 			case "BPMN_MARKER_AD_HOC":
-				GenericNode.createActivityAdhocMarker(markerSVG, marker, cattr);
+				GenericNode.createActivityAdhocMarker(containerSVG, marker, attr);
 				break;
 			case "BPMN_MARKER_COMPENSATION":
-				GenericNode.createActivityCompensationMarker(markerSVG, marker, cattr);
+				GenericNode.createActivityCompensationMarker(containerSVG, marker, attr);
 				break;
 			case "BPMN_MARKER_LOOP":
-				GenericNode.createActivityLoopMarker(markerSVG, marker, cattr);
+				GenericNode.createActivityLoopMarker(containerSVG, marker, attr);
 				break;
 			case "BPMN_MARKER_PARALLEL":
 			case "BPMN_MARKER_SEQUENTIAL":
-				GenericNode.createActivityBarMarker(markerSVG, marker, cattr);
+				GenericNode.createActivityBarMarker(containerSVG, marker, attr);
 				break;
 			default:
 				console.log("No graphics for "+attr.id+" marker - '"+marker+"'");
 		}
-		cattr.x += 20;
+		markerSVG.appendChild(containerSVG);
+		x += 20;
 	}
 	
 	// Position on larger SVG
 	var width = 15 + ((j-1)*20);
-	var x = (attr.geometry.width + width)/2 - width;
+	var cx = (attr.geometry.width + width)/2 - width;
 	markerSVG.setAttributeNS(null, "height", 15);
 	markerSVG.setAttributeNS(null, "width", width);
-	markerSVG.setAttributeNS(null, "x", x);
+	markerSVG.setAttributeNS(null, "x", cx);
 	markerSVG.setAttributeNS(null, "y", (attr.geometry.height - 20));
 	svg.appendChild(markerSVG);
-}
-
-/**
- * Draw a na entity for this element.
- * @private
- * @static
- * @param {SVGElement} svg - the container for this drawing
- * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
- * @param {String} attr - other information essential to this function
- */
-GenericNode.createActivityAccessMarker = function(svg, type, attr) {
-	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
-	var x = attr.x || 0;
-	
-	var svgns = "http://www.w3.org/2000/svg";
-	var containerSVG = document.createElementNS(svgns, "svg");
-	containerSVG.setAttributeNS(null, "x", x);
-	containerSVG.setAttributeNS(null, "height", 15);
-	containerSVG.setAttributeNS(null, "width", 15);
-	
-	var rect = document.createElementNS(svgns, "rect"), style = null;
-	rect.setAttributeNS(null, "width", 15);
-	rect.setAttributeNS(null, "height", 15);
-	style = rect.style;
-	style.stroke = lineColor;
-	style.fill = "none";
-	containerSVG.appendChild(rect);
-	
-	var line = document.createElementNS(svgns, "line"); // Closed
-	line.setAttributeNS(null, "x1", 4);
-	line.setAttributeNS(null, "x2", 11);
-	line.setAttributeNS(null, "y1", 7.5);
-	line.setAttributeNS(null, "y2", 7.5);
-	style = line.style;
-	style.stroke = lineColor;
-	style.fill = "none";
-	containerSVG.appendChild(line);
-	
-	if(type == "BPMN_MARKER_OPEN") {
-		line = document.createElementNS(svgns, "line"); // Open
-		line.setAttributeNS(null, "x1", 7.5);
-		line.setAttributeNS(null, "x2", 7.5);
-		line.setAttributeNS(null, "y1", 4);
-		line.setAttributeNS(null, "y2", 11);
-		style = line.style;
-		style.stroke = lineColor;
-		style.fill = "none";
-		containerSVG.appendChild(line);
-	}
-	svg.appendChild(containerSVG);
-}
-
-/**
- * Draw a na entity for this element.
- * @private
- * @static
- * @param {SVGElement} svg - the container for this drawing
- * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
- * @param {String} attr - other information essential to this function
- */
-GenericNode.createActivityAdhocMarker = function(svg, type, attr) {
-	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
-	var x = attr.x || 0;
-	
-	var svgns = "http://www.w3.org/2000/svg";
-	var containerSVG = document.createElementNS(svgns, "svg");
-	containerSVG.setAttributeNS(null, "x", x);
-	containerSVG.setAttributeNS(null, "height", 15);
-	containerSVG.setAttributeNS(null, "width", 15);
-	
-	var path = document.createElementNS(svgns, "path");
-	var d = "";
-	d += "M 2.25 7.5";
-	d += " L 12.75 7.5"; // TODO: turn this into a curve (~)
-	path.setAttributeNS(null, "d", d);
-	var style = path.style;
-	style.fill = "none";
-	style.stroke = lineColor;
-	containerSVG.appendChild(path);
-	svg.appendChild(containerSVG);
-	
-}
-
-/**
- * Draw a na entity for this element.
- * Due to scaling issues, the BPMN event compensation emblem can not be reused for this BPMN activity.
- * @private
- * @static
- * @param {SVGElement} svg - the container for this drawing
- * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
- * @param {String} attr - other information essential to this function
- */
-GenericNode.createActivityCompensationMarker = function(svg, type, attr) {
-	var x = attr.x || 0;
-	
-	var svgns = "http://www.w3.org/2000/svg";
-	var containerSVG = document.createElementNS(svgns, "svg");
-	containerSVG.setAttributeNS(null, "x", x);
-	containerSVG.setAttributeNS(null, "y", 4);
-	containerSVG.setAttributeNS(null, "height", 15);
-	containerSVG.setAttributeNS(null, "width", 15);
-	
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-	d = "";
-	d += "M 7.5 0"; // Left triangle
-	d += " L 0 5.5";
-	d += " L 7.5 11";
-	d += " L 7.5 0 Z";
-	d += "M 15 0"; // Right triangle
-	d += " L 7.5 5.5";
-	d += " L 15 11";
-	d += " L 15 0 Z";
-	path.setAttributeNS(null, "d", d);
-	style = path.style;
-	style.fill = "none";
-	style.stroke = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
-	style["stroke-width"] = 1;
-	containerSVG.appendChild(path);
-	
-	svg.appendChild(containerSVG);
-}
-
-/**
- * Draw a na entity for this element.
- * @private
- * @static
- * @param {SVGElement} svg - the container for this drawing
- * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
- * @param {String} attr - other information essential to this function
- */
-GenericNode.createActivityLoopMarker = function(svg, type, attr) {
-	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
-	var x = attr.x || 0;
-	
-	var svgns = "http://www.w3.org/2000/svg";
-	var containerSVG = document.createElementNS(svgns, "svg"), rect = null, style = null;
-	containerSVG.setAttributeNS(null, "x", x);
-	containerSVG.setAttributeNS(null, "height", 15);
-	containerSVG.setAttributeNS(null, "width", 15);
-	
-	var path = document.createElementNS(svgns, "path");
-	var d = "";
-	d += "M 7.5 14.5";
-	d += " A 7 7 0 1 0 2.5502525316941664 12.449747468305832"; // This is very specific
-	path.setAttributeNS(null, "d", d);
-	var style = path.style;
-	style.fill = "none";
-	style.stroke = lineColor;
-	containerSVG.appendChild(path);
-	// TODO: arrow at 7.5 14.5 along the tangent of the line
-	svg.appendChild(containerSVG);
-}
-
-/**
- * Draw a na entity for this element.
- * @private
- * @static
- * @param {SVGElement} svg - the container for this drawing
- * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
- * @param {String} attr - other information essential to this function
- */
-GenericNode.createActivityBarMarker = function(svg, type, attr) {
-	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
-	var x = attr.x || 0;
-	
-	var svgns = "http://www.w3.org/2000/svg";
-	var containerSVG = document.createElementNS(svgns, "svg"), rect = null, style = null;
-	containerSVG.setAttributeNS(null, "x", x);
-	containerSVG.setAttributeNS(null, "height", 15);
-	containerSVG.setAttributeNS(null, "width", 15);
-	
-	for(var i = 0; i < 3; i++) { // Three bars, vertically from 0-3, 6-9, 12-15 for BPMN_MARKER_SEQUENTIAL
-		rect = document.createElementNS(svgns, "rect");
-		rect.setAttributeNS(null, "y", i*6);
-		rect.setAttributeNS(null, "width", 15);
-		rect.setAttributeNS(null, "height", 3);
-		style = rect.style;
-		style.fill = lineColor;
-		style.stroke = lineColor;
-		containerSVG.appendChild(rect);
-	}
-	if(type == "BPMN_MARKER_PARALLEL")
-		containerSVG.setAttributeNS(null, "transform", "rotate(90 7.5 7.5)");
-	svg.appendChild(containerSVG);
 }
 
 /**
@@ -3792,8 +3625,8 @@ GenericNode.createActivityMessage = function(svg, type, attr) {
 	}
 	GenericNode.createArtifactMessage(svg, "", {
 		id:attr.id,
-		x:5,
-		y:12,
+		//x:6,
+		//y:8,
 		geometry:{width:20, height:13},
 		fill:attr.fill,
 		borderStyle:attr.borderStyle,
@@ -3812,20 +3645,48 @@ GenericNode.createActivityMessage = function(svg, type, attr) {
  * @param {String} attr - other information essential to this function
  */
 GenericNode.createActivityUser = function(svg, type, attr) {
-	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-	var d = ""; // TODO: needs application of curves
-	d += "M 7 7.75";
-	d += " A 0 0 0 0 0 5.75 9";
-	d += " A 0 0 0 0 0 0 14.5";
+	var svgns = "http://www.w3.org/2000/svg";
+	
+	var path = document.createElementNS(svgns, "path"), d = null, style = null;
+	d = "";
+	d += "M 7 8.25"; // Person
+	d += " L 6 9.25";
+	d += " c -4 2 -4 2 -6 6.25";
 	d += " L 0 20";
 	d += " L 20 20";
-	d += " L 20 14.5";
-	d += " A 0 0 0 0 0 14.25 9";
-	d += " A 0 0 0 0 0 13 7.75";
-	d += " C 19.75 -2.5 0.25 -2.5 7 7.75 Z";
+	d += " L 20 15.5";
+	d += " c -2 -4.5 -4 -5 -6 -6.25";
+	d += " L 13 8.25";
+	d += " C 19.75 -2.5 0.25 -2.5 7 8.25 Z";
+	d += "M 6 9.25"; // Shirt collar
+	d += " c -1 5 9 5 8 0";
 	path.setAttributeNS(null, "d", d);
-	var style = path.style;
+	style = path.style;
 	style.fill = "white";
+	style.stroke = "black";
+	svg.appendChild(path);
+
+	path = document.createElementNS(svgns, "path");
+	d = "";
+	d += "M 5.75 5.5"; // Hair
+	d += " c 4 -5 5 0 7.75 -2.5";
+	d += " c -3 -3.5 -6 -3.5 -7.75 2.5 Z"
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = "black";
+	style.stroke = "black";
+	svg.appendChild(path);
+	
+	path = document.createElementNS(svgns, "path");
+	d = "";
+	d += "M 4 20"; // Right sleeve
+	d += " l 0 -3.5";
+	d += "M 16 20"; // Left sleeve
+	d += " l 0 -3.5";
+	path.setAttributeNS(null, "d", d);
+	path.setAttributeNS(null, "stroke-linecap", "round");
+	style = path.style;
+	style.fill = "none";
 	style.stroke = "black";
 	svg.appendChild(path);
 }
@@ -3840,68 +3701,32 @@ GenericNode.createActivityUser = function(svg, type, attr) {
  * @param {String} attr - other information essential to this function
  */
 GenericNode.createActivityManual = function(svg, type, attr) {
-	var svgns = "http://www.w3.org/2000/svg";
-	
-	var path = document.createElementNS(svgns, "path"), line = null, style = null;
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 	var d = ""; // TODO: needs application of curves
-	d += "M 11.5 0"; // Thumb
+	d += "M 12 0"; // Thumb
 	d += " L 3.25 0";
-	d += " L 0 3";
+	d += " c -1 0.5 -2 0.5 -3.25 3";
 	d += " L 0 11";
-	d += " L 2 12.5";
+	d += " c 0.5 1 0.5 1 2 1.5";
 	d += " L 15.5 12.5"; // Pinky
-	d += " L 15.5 10";
+	d += " c 0.75 -0.8 0.75 -1.2 0 -2.5";
 	d += " L 17.25 10"; // Ring
-	d += " L 17.25 7.5";
+	d += " c 0.75 -0.8 0.75 -1.2 0 -2.5";
 	d += " L 18 7.5"; // Middle
-	d += " L 18 5";
+	d += " c 0.75 -0.8 0.75 -1.2 0 -2.5";
 	d += " L 18.75 5"; // Index
-	d += " L 18.75 2.5";
+	d += " c 0.75 -0.8 0.75 -1.2 0 -2.5";
 	d += " L 9.25 2.5"; // Nook of palm
-	d += " L 11.5 0 Z"; // Rejoin
+	d += " c 0 0 1.75 0 2.75 -2.5 Z"; // Rejoin
+	d += "M 9.85 10 L 15.5 10"; // Ring, Pinky
+	d += "M 10.5 7.5 L 17.25 7.5"; // Middle,Ring
+	d += "M 9.3 5 L 18 5"; // Index, Middle
+	d += "M 5.19 2.5 L 9.25 2.5"; // Thumb, Index
 	path.setAttributeNS(null, "d", d);
-	style = path.style;
+	var style = path.style;
 	style.fill = "white";
 	style.stroke = "black";
 	svg.appendChild(path);
-	
-	//Lines that define the fingers
-	line = document.createElementNS(svgns, "line"); // Thumb, Index
-	line.setAttributeNS(null, "x1", 5.19);
-	line.setAttributeNS(null, "x2", 9.25);
-	line.setAttributeNS(null, "y1", 2.5);
-	line.setAttributeNS(null, "y2", 2.5);
-	style = line.style;
-	style.fill = "none";
-	style.stroke = "black";
-	svg.appendChild(line);
-	line = document.createElementNS(svgns, "line"); // Index, Middle
-	line.setAttributeNS(null, "x1", 9.3);
-	line.setAttributeNS(null, "x2", 18);
-	line.setAttributeNS(null, "y1", 5);
-	line.setAttributeNS(null, "y2", 5);
-	style = line.style;
-	style.fill = "none";
-	style.stroke = "black";
-	svg.appendChild(line);
-	line = document.createElementNS(svgns, "line"); // Middle,Ring
-	line.setAttributeNS(null, "x1", 10.5);
-	line.setAttributeNS(null, "x2", 17.25);
-	line.setAttributeNS(null, "y1", 7.5);
-	line.setAttributeNS(null, "y2", 7.5);
-	style = line.style;
-	style.fill = "none";
-	style.stroke = "black";
-	svg.appendChild(line);
-	line = document.createElementNS(svgns, "line"); // Ring, Pinky
-	line.setAttributeNS(null, "x1", 9.85);
-	line.setAttributeNS(null, "x2", 15.5);
-	line.setAttributeNS(null, "y1", 10);
-	line.setAttributeNS(null, "y2", 10);
-	style = line.style;
-	style.fill = "none";
-	style.stroke = "black";
-	svg.appendChild(line);
 }
 
 /**
@@ -3966,15 +3791,14 @@ GenericNode.createActivityService = function(svg, type, attr) {
 	var svgns = "http://www.w3.org/2000/svg";
 	
 	var svg1 = document.createElementNS(svgns, "svg");
-	svg1.setAttributeNS(null, "x", 5);
-	svg1.setAttributeNS(null, "y", 5);
+	svg1.setAttributeNS(null, "width", 15.65);
 	svg1.setAttributeNS(null, "height", 15.65);
 	GenericNode.createActivityServiceGear(svg1);
 	svg.appendChild(svg1);
 	
 	var svg2 = document.createElementNS(svgns, "svg");
-	svg2.setAttributeNS(null, "x", 10);
-	svg2.setAttributeNS(null, "y", 10);
+	svg2.setAttributeNS(null, "x", 5);
+	svg2.setAttributeNS(null, "y", 5);
 	svg2.setAttributeNS(null, "width", 15.65);
 	svg2.setAttributeNS(null, "height", 15.65);
 	GenericNode.createActivityServiceGear(svg2);
@@ -4050,59 +3874,182 @@ GenericNode.createActivityServiceGear = function(svg) {
  * @param {String} type - the specific type of the entity being drawn (multiple may be pooled by common strokes)
  * @param {String} attr - other information essential to this function
  */
-GenericNode.createActivityScript = function(svg, type, attr) {
-	var svgns = "http://www.w3.org/2000/svg";
-	
-	var path = document.createElementNS(svgns, "path"), line = null, style = null;
-	var d = ""; // TODO: needs application of curves
+GenericNode.createActivityScript = function(svg, type, attr) {	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
 	d += "M 20 0";
 	d += " L 5.85 0";
-	d += " L 0 20";
+	d += " c -15 4 7 14 -5.85 20";
 	d += " L 14.15 20";
-	d += " L 20 0 Z";
+	d += " c 15 -4 -7 -14 5.85 -20 Z";
+	d += "M 3.75 4 L 12.65 4"; // Text lines (4)
+	d += "M 4.725 8 L 13.6 8";
+	d += "M 6.5 12 L 15.25 12";
+	d += "M 7.25 16 L 16 16";
 	path.setAttributeNS(null, "d", d);
-	style = path.style;
+	var style = path.style;
 	style.fill = "white";
 	style.stroke = "black";
 	svg.appendChild(path);
+}
+
+/**
+ * Draw a na entity for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityAccessMarker = function(svg, type, attr) {
+	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
 	
-	//Text lines
-	line = document.createElementNS(svgns, "line");
-	line.setAttributeNS(null, "x1", 3.75);
-	line.setAttributeNS(null, "x2", 12.65);
-	line.setAttributeNS(null, "y1", 4);
-	line.setAttributeNS(null, "y2", 4);
+	var svgns = "http://www.w3.org/2000/svg";
+	var rect = document.createElementNS(svgns, "rect"), style = null;
+	rect.setAttributeNS(null, "width", 15);
+	rect.setAttributeNS(null, "height", 15);
+	style = rect.style;
+	style.stroke = lineColor;
+	style.fill = "none";
+	svg.appendChild(rect);
+	
+	var line = document.createElementNS(svgns, "line"); // Closed
+	line.setAttributeNS(null, "x1", 4);
+	line.setAttributeNS(null, "x2", 11);
+	line.setAttributeNS(null, "y1", 7.5);
+	line.setAttributeNS(null, "y2", 7.5);
 	style = line.style;
+	style.stroke = lineColor;
+	style.fill = "none";
+	svg.appendChild(line);
+	
+	if(type == "BPMN_MARKER_OPEN") {
+		line = document.createElementNS(svgns, "line"); // Open
+		line.setAttributeNS(null, "x1", 7.5);
+		line.setAttributeNS(null, "x2", 7.5);
+		line.setAttributeNS(null, "y1", 4);
+		line.setAttributeNS(null, "y2", 11);
+		style = line.style;
+		style.stroke = lineColor;
+		style.fill = "none";
+		svg.appendChild(line);
+	}
+}
+
+/**
+ * Draw a na entity for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityAdhocMarker = function(svg, type, attr) {
+	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
+
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	var d = "";
+	d += "M 2.25 7.5";
+	d += " c 5 -3 5 3 10.5 0";
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = "none";
+	style.stroke = lineColor;
+	svg.appendChild(path);
+	
+}
+
+/**
+ * Draw a na entity for this element.
+ * Due to scaling issues, the BPMN event compensation emblem can not be reused for this BPMN activity.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityCompensationMarker = function(svg, type, attr) {
+	var x = attr.x || 0;
+	
+	var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	d = "";
+	d += "M 7.5 0"; // Left triangle
+	d += " L 0 5.5";
+	d += " L 7.5 11";
+	d += " L 7.5 0 Z";
+	d += "M 15 0"; // Right triangle
+	d += " L 7.5 5.5";
+	d += " L 15 11";
+	d += " L 15 0 Z";
+	path.setAttributeNS(null, "d", d);
+	style = path.style;
+	style.fill = "none";
+	style.stroke = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw a na entity for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityLoopMarker = function(svg, type, attr) {
+	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var path = document.createElementNS(svgns, "path");
+	var d = "";
+	d += "M 7.5 14.5";
+	d += " A 7 7 0 1 0 2.5502525316941664 12.449747468305832"; // This is very specific
+	path.setAttributeNS(null, "d", d);
+	var style = path.style;
+	style.fill = "none";
+	style.stroke = lineColor;
+	svg.appendChild(path);
+	
+	path = document.createElementNS(svgns, "path");
+	d = "";
+	d += "M 3.0502525316941664 12.949747468305832"
+	d += " L 0 12.949747468305832"
+	d += "M 3.0502525316941664 12.949747468305832"
+	d += " L 3.0502525316941664 9.8994949366116656"
+	path.setAttributeNS(null, "d", d);
+	path.setAttributeNS(null, "stroke-linecap", "square");
+	var style = path.style;
 	style.fill = "none";
 	style.stroke = "black";
-	svg.appendChild(line);
-	line = document.createElementNS(svgns, "line");
-	line.setAttributeNS(null, "x1", 4.725);
-	line.setAttributeNS(null, "x2", 6.6);
-	line.setAttributeNS(null, "y1", 8);
-	line.setAttributeNS(null, "y2", 8);
-	style = line.style;
-	style.fill = "none";
-	style.stroke = "black";
-	svg.appendChild(line);
-	line = document.createElementNS(svgns, "line");
-	line.setAttributeNS(null, "x1", 6.5);
-	line.setAttributeNS(null, "x2", 15.25);
-	line.setAttributeNS(null, "y1", 12);
-	line.setAttributeNS(null, "y2", 12);
-	style = line.style;
-	style.fill = "none";
-	style.stroke = "black";
-	svg.appendChild(line);
-	line = document.createElementNS(svgns, "line");
-	line.setAttributeNS(null, "x1", 7.25);
-	line.setAttributeNS(null, "x2", 16);
-	line.setAttributeNS(null, "y1", 16);
-	line.setAttributeNS(null, "y2", 16);
-	style = line.style;
-	style.fill = "none";
-	style.stroke = "black";
-	svg.appendChild(line);
+	style["stroke-width"] = 1;
+	svg.appendChild(path);
+}
+
+/**
+ * Draw a na entity for this element.
+ * @private
+ * @static
+ * @param {SVGElement} svg - the container for this drawing
+ * @param {String} type - the specific type of the marker being drawn (multiple may be pooled by common strokes)
+ * @param {String} attr - other information essential to this function
+ */
+GenericNode.createActivityBarMarker = function(svg, type, attr) {
+	var lineColor = attr.styleProperties["com.yworks.bpmn.icon.line.color"] || "black";
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	for(var i = 0; i < 3; i++) { // Three bars, vertically from 0-3, 6-9, 12-15 for BPMN_MARKER_SEQUENTIAL
+		rect = document.createElementNS(svgns, "rect");
+		rect.setAttributeNS(null, "y", i*6);
+		rect.setAttributeNS(null, "width", 15);
+		rect.setAttributeNS(null, "height", 3);
+		style = rect.style;
+		style.fill = lineColor;
+		style.stroke = lineColor;
+		svg.appendChild(rect);
+	}
+	if(type == "BPMN_MARKER_PARALLEL")
+		svg.setAttributeNS(null, "transform", "rotate(90 7.5 7.5)");
 }
 
 /**
