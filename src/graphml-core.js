@@ -188,7 +188,7 @@ GraphmlElement.prototype.getBounds = function() {
 	if(rep && typeof(rep) == "object")
 		return rep.getBounds();
 	else {
-		return { x:0, y:0, width:0, height:0 }; 
+		return { x:0, y:0, width:0, height:0 };
 	}
 }
 
@@ -375,10 +375,11 @@ Representation.prototype.toString = function() {
 
 /**
  * The basic container of a graphml graph element.
- * @property {Array[Node]} nodes - an Array of the Node ids that are contained by this graph
- * @property {Array[Edge]} edges - an Array of the Edge ids that are contained by this graph
- * @property {Array[Hyperedge]} hyperedges - an Array of the Hyperedge ids that are contained by this graph
- * @property {Object} subgraphs - a mapping of subgraphs contained by this graph
+ * @property {Object[Node]} nodes - a mapping of the Node ids that are contained by this graph
+ * @property {Object[Edge]} edges - a mapping of the Edge ids that are contained by this graph
+ * @property {Object[Hyperedge]} hyperedges - a mapping of the Hyperedge ids that are contained by this graph
+ * @property {Object[Graph]} subgraphs - a mapping of subgraphs contained by this graph
+ * @property {Graph} parentGraph - the Graph above this one, or null if we are the root parent Graph
  * @constructor
  * @param {String} id - a unique identifier for this element
  * @param {Function} shape - the optional, but recommended, behaviors that maintain the visual component of the element
@@ -388,10 +389,80 @@ Graph.prototype = new GraphmlElement();
 Graph.prototype.constructor = Graph;
 function Graph(id, shape, attributes) {
 	GraphmlElement.call(this, id, shape, attributes);
-	this.nodes = [];
-	this.edges = [];
-	this.hyperedges = [];
+	this.nodes = {};
+	this.edges = {};
+	this.hyperedges = {};
 	this.subgraphs = {};
+	this.parentGraph = null;
+	this.bounds = {
+		left:null,
+		top:null,
+		right:null,
+		bottom:null
+	};
+}
+
+/**
+ * na
+ */
+Graph.prototype.getParent = function() {
+	return this.parentGraph;
+}
+
+/**
+ * na
+ */
+Graph.prototype.setParent = function(parentGraph) {
+	this.parentGraph = parentGraph;
+}
+
+/**
+ * Get the two-dimensional coordinates and span that explains the canvas-space this element should occupy.
+ * @override
+ */
+Graph.prototype.getBounds = function() {
+	var boundsIn = this.bounds;
+	var boundsOut = { };
+	boundsOut.x = boundsIn.left ? boundsIn.left.getBounds().x : 0;
+	boundsOut.y = boundsIn.top ? boundsIn.top.getBounds().y : 0;
+	boundsOut.width = boundsIn.right ? boundsIn.right.getBounds().width : 0;
+	boundsOut.height = boundsIn.bottom ? boundsIn.bottom.getBounds().height : 0;
+	return boundsOut;
+}
+
+/**
+ *
+ */
+Graph.prototype.updateBounds = function(node, remove) {
+	var bounds = this.bounds;
+	var nodeBounds = node.getBounds();
+	var nodeX = nodeBounds.x;
+	var nodeY = nodeBounds.y;
+	var boundsX = nodeX;
+	var boundsY = nodeY;
+	
+	if(bounds.left) { //Check left
+		var leftBounds = bounds.left.getBounds();
+		if(nodeBounds.x < leftBounds.x) {
+			bounds.left = node;
+			boundsX = nodeBounds.x;
+		}
+		else
+			boundsX = leftBounds.x;
+	}
+	else
+		bounds.left = node;
+	if(bounds.top) { //Check top
+		var topBounds = bounds.top.getBounds();
+		if(nodeBounds.y < topBounds.y) {
+			bounds.top = node;
+			boundsY = nodeBounds.y;
+		}
+		else
+			boundsY = topBounds.y;
+	}
+	else
+		bounds.top = node;
 }
 
 /**
@@ -400,6 +471,14 @@ function Graph(id, shape, attributes) {
  */
 Graph.prototype.getNodes = function() {
 	return this.nodes;
+}
+
+/**
+ * Get a Node element in this graph from its id.
+ * @returns {Node} a Node element
+ */
+Graph.prototype.getNode = function(id) {
+	return this.nodes[id];
 }
 
 /**
@@ -416,31 +495,30 @@ Graph.prototype.setNodes = function(nodes) {
 /**
  * Assign a new Node element id to this Graph element
  * @param {String} id - a new Node element id
- * @returns {Boolean} true, if the id is added; false, if it is already found in the Array and not added
+ * @param {Node} node - a new Node element
+ * @returns {Boolean} true, if the id is added; false, if it is already found and not added
  */
-Graph.prototype.addNode = function(id) {
+Graph.prototype.addNode = function(id, node) {
+	id = id || node.getId();
 	var nodes = this.nodes;
-	for(var i = 0, j = nodes.length; i < j; i++) {
-		if(nodes[i].id == id)
+	for(var nid in nodes) {
+		if(nid == id)
 			return false;
 	}
-	nodes.push(id);
+	
+	nodes[id] = node;
 	return true;
 }
 
 /**
  * Remove an existing Node element id from this Graph element
- * @param {String} id - a new Node element id
+ * @param {String} id - a Node element id
  * @returns {Boolean} true, if the id is removed; false, if it can not be removed
  */
 Graph.prototype.removeNode = function(id) {
-	for(var i = 0, j = nodes.length; i < j; i++) {
-		if(nodes[i].id == id) {
-			nodes.splice(i,1);
-			return false;
-		}
-	}
-	return true;
+	var nodeOut = this.nodes[id];
+	delete this.nodes[id];
+	return !!nodeOut;
 }
 
 /**
@@ -461,33 +539,40 @@ Graph.prototype.setEdges = function(edges) {
 }
 
 /**
+ * Get an Edge element in this graph from its id.
+ * @returns {Edge} an Edge element
+ */
+Graph.prototype.getEdge = function(id) {
+	return this.edges[id];
+}
+
+/**
  * Assign a new Edge element id to this Graph element
  * @param {String} id - a new Edge element id
- * @returns {Boolean} true, if the id is added; false, if it is already found in the Array and not added
+ * @param {Edge} edge - a new Edge element
+ * @returns {Boolean} true, if the id is added; false, if it is already found and not added
  */
-Graph.prototype.addEdge = function(id) {
+Graph.prototype.addEdge = function(id, edge) {
+	id = id || node.getId();
 	var edges = this.edges;
-	for(var i = 0, j = edges.length; i < j; i++) {
-		if(edges[i].id == id)
+	for(var eid in edges) {
+		if(eid == id)
 			return false;
 	}
-	edges.push(id);
+	
+	edges[id] = edge;
 	return true;
 }
 
 /**
  * Remove an existing Edge element id from this Graph element
- * @param {String} id - a new Edge element id
+ * @param {String} id - an Edge element id
  * @returns {Boolean} true, if the id is removed; false, if it can not be removed
  */
 Graph.prototype.removeEdge = function(id) {
-	for(var i = 0, edges = this.edges, j = edges.length; i < j; i++) {
-		if(edges[i].id == id) {
-			edges.splice(i,1);
-			return false;
-		}
-	}
-	return true;
+	var edgeOut = this.edges[id];
+	delete this.edges[id];
+	return !!edgeOut;
 }
 
 /**
@@ -508,33 +593,40 @@ Graph.prototype.setHyperedges = function(hyperedges) {
 }
 
 /**
+ * Get a Hyperedge element in this graph from its id.
+ * @returns {Hyperedge} a Hyperedge element
+ */
+Graph.prototype.getHyperedge = function(id) {
+	return this.hyperedge[id];
+}
+
+/**
  * Assign a new Hyperedge element id to this Graph element
  * @param {String} id - a new Hyperedge element id
+ * @param {Hyperedge} hyperedge - a new Hyperedge element
  * @returns {Boolean} true, if the id is added; false, if it is already found in the Array and not added
  */
-Graph.prototype.addHyperedge = function(id) {
-	var hyperedges = this.edges;
-	for(var i = 0, j = hyperedges.length; i < j; i++) {
-		if(hyperedges[i].id == id)
+Graph.prototype.addHyperedge = function(id, hyperedge) {
+	id = id || node.getId();
+	var hyperedges = this.hyperedges;
+	for(var hid in hyperedges) {
+		if(id == hid)
 			return false;
 	}
-	hyperedges.push(id);
+	
+	hyperedges[id] = hyperedge;
 	return true;
 }
 
 /**
  * Remove an existing Hyperedge element id from this Graph element
- * @param {String} id - a new Hyperedge element id
+ * @param {String} id - a Hyperedge element id
  * @returns {Boolean} true, if the id is removed; false, if it can not be removed
  */
 Graph.prototype.removeHyperedge = function(id) {
-	for(var i = 0, hyperedges = this.hyperedges, j = hyperedges.length; i < j; i++) {
-		if(hyperedges[i].id == id) {
-			hyperedges.splice(i,1);
-			return false;
-		}
-	}
-	return true;
+	var edgeOut = this.hyperedges[id];
+	delete this.hyperedges[id];
+	return !!edgeOut;
 }
 
 /**
@@ -569,13 +661,47 @@ Graph.prototype.getSubgraph = function(id) {
  * Set a specific Graph element to be contained by this Graph element.
  * @param {String} id - a Graph element id
  * @param {Graph} subgraph - a new Graph element
- * @returns {Graph} the rpevious subgraph associated with this id
+ * @returns {Graph} the previous subgraph associated with this id
  */
 Graph.prototype.setSubgraph = function(id, subgraph) {
+	id = id || ( subgraph ? (subgraph.getId ? subgraph.getId() : subgraph.id) : null);
+	if(!id)
+		throw new Error("Graph id must be defined to add or remove a new subgraph.");
+	
 	var subgraphs = this.subgraphs;
 	var oldSubgraph = subgraphs[id];
 	subgraphs[id] = subgraph;
+	subgraph.setParent(this);
 	return oldSubgraph;
+}
+
+/**
+ * Assign a new Graph element id to this Graph element as a subgraph
+ * @param {Subgraph} subgraph - a new Graph element
+ * @returns {Boolean} true, if the id is added; false, if it is already found in the Array and not added
+ */
+Graph.prototype.addSubgraph = function(id, subgraph) {
+	id = id || subgraph.getId();
+	var graphs = this.subgraphs;
+	for(var gid in graphs) {
+		if(gid == id)
+			return false;
+	}
+	
+	graphs[id] = subgraph;
+	subgraph.setParent(this);
+	return true;
+}
+
+/**
+ * Remove an existing Graph element id from this Graph element
+ * @param {String} id - a new Graph element id
+ * @returns {Boolean} true, if the id is removed; false, if it can not be removed
+ */
+Graph.prototype.removeSubgraph = function(id) {
+	var graphOut = this.subgraphs[id];
+	delete this.subgraphs[id];
+	return !!graphOut;
 }
 
 /**

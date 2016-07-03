@@ -13,8 +13,12 @@ function GraphmlCanvas(attributes) {
 	this.graph = null;
 	this.defaultGraph = null;
 	this.graphData = {
+		dx:0,
+		dy:0,
 		zoom:1,
-		pad:50
+		pad:50,
+		scrollState:false,
+		scrollLock:false
 	};
 	
 	if(attributes) {
@@ -84,6 +88,82 @@ GraphmlCanvas.prototype.findCanvas = function(attributes) {
 	}
 	console.log("Valid canvas object found.");
 	return canvas;
+}
+
+/**
+ * na
+ */
+GraphmlCanvas.prototype.setScroll = function(scrollState) {
+	var oldState = this.graphData.scrollState
+	this.graphData.scrollState = scrollState;
+	var canvas = this.canvas;
+	if(scrollState != oldState) {
+		if(scrollState) {
+			if(canvas) {
+				canvas.addEventListener("mousedown", GraphmlCanvas.prototype.scrollmdown.bind(this));
+				canvas.addEventListener("mousemove", GraphmlCanvas.prototype.scrollmmove.bind(this));
+				canvas.addEventListener("mouseup", GraphmlCanvas.prototype.scrollmup.bind(this));
+			}
+		}
+		else {
+			if(canvas) {
+				canvas.removeEventListener("mousedown", GraphmlCanvas.prototype.scrollmdown.bind(this));
+				canvas.removeEventListener("mousemove", GraphmlCanvas.prototype.scrollmmove.bind(this));
+				canvas.removeEventListener("mouseup", GraphmlCanvas.prototype.scrollmup.bind(this));
+			}
+			data.scrollLock = false;
+		}
+	}
+}
+
+/**
+ * na
+ * @returns {Boolean} na
+ */
+GraphmlCanvas.prototype.getScroll = function(scrollState) {
+	return this.graphData.scrollState;
+}
+
+/**
+ * na
+ * @private
+ */
+GraphmlCanvas.prototype.scrollmdown = function(evt) {
+	if(this.getScroll()) {
+		var data = this.graphData;
+		var content = this.getContentLayer();
+		var contentLeft = content.style.left;
+		var contentTop = content.style.top;
+		
+		contentLeft = contentLeft.slice(0, contentLeft.length-2);
+		contentTop = contentTop.slice(0, contentTop.length-2);
+		data.dx = evt.clientX - contentLeft;
+		data.dy = evt.clientY - contentTop;
+		data.scrollLock = true;
+	}
+}
+
+/**
+ * na
+ * @private
+ */
+GraphmlCanvas.prototype.scrollmout = function(evt) {
+	this.graphData.scrollLock = false;
+}
+
+/**
+ * na
+ * @private
+ */
+GraphmlCanvas.prototype.scrollmmove = function(evt) {
+	var data = this.graphData;
+	if(data.scrollLock) {
+		var content = this.getContentLayer();
+		content.style.left = (evt.clientX - data.dx)+"px";
+		content.style.top = (evt.clientY - data.dy)+"px";
+		evt.preventDefault();
+		evt.cancelBubble = true;
+	}
 }
 
 /**
@@ -231,13 +311,14 @@ GraphmlCanvas.prototype.center = function() {
 		return;
 	
 	var graph = this.graph;
+	var content = this.getContentLayer().style;
 	if(!graph) {
-		canvas.scrollLeft = 0;
-		canvas.scrollTop = 0;
+		content.left = "0px";
+		content.top = "0px";
 	}
 	else {
-		canvas.scrollLeft = graph.getWidth(this)/2 - this.getScrollBarHorizontalLength()/2;
-		canvas.scrollTop = graph.getHeight(this)/2 - this.getScrollBarVerticalLength()/2;
+		content.left = (this.getScrollBarHorizontalLength()/2 - graph.getWidth()/2) + "px";
+		content.top = (this.getScrollBarVerticalLength()/2 - graph.getHeight()/2) + "px";
 	}
 }
 
@@ -505,8 +586,6 @@ GraphmlCanvas.prototype.readXML = function(xml) {
 		var name = xml.URL.slice(xml.URL.lastIndexOf("/")+1);
 		var graph = new GraphmlPaper(name);
 		this.prepareElements(graph, structures, gml);
-		this.arrangeSubgraphs(graph, structures);
-		this.arrangeElementsInSubgraphs(structures);
 		this.setGraph(graph);
 	}
 }
@@ -723,90 +802,6 @@ GraphmlCanvas.prototype.prepareElements = function(graph, structures, xml) {
 	}
 }
 
-/**
- * Organize a preliminary subgraph structure.
- * Three tasks exist that need to be performed for valid subgraphing:
- * 1) set a root graph;
- * 2) make some graphs children of another graph based on id notation;
- * 3) make some elements children of a graph based on notation.
- * This method performs the first two.
- * @private
- * @param {GraphPaper} graph - the graph structure
- * @param {Object} structures - an object populated by the information in the file
- * @param {Array[ParsedGraphmlNode]} structures.graphs - an Array of subgraphs
- * @param {Object} structures.subgraphs - an Map of ids to graphs that exists independently of the subgraphing organization; created in this function
- */
-GraphmlCanvas.prototype.arrangeSubgraphs = function(graph, structures) {
-	var graphs1 = graph.getGraphs();
-	var graphs2 = structures.graphs; // This list should be in the "same order" as the xml so we should be able to walk through in order
-	var graphs3 = {};
-	
-	var agraphid = graphs2[0].id;
-	var agraph = graphs1[agraphid]
-	graph.setRootGraph(agraph); // This is the root graph
-	graphs3.root = agraph;
-		
-	for(var i = 1, j = graphs2.length; i < j; i++) {
-		agraphid = graphs2[i].id;
-		agraph = graphs1[agraphid];
-		var containerid = agraphid.lastIndexOf("::");
-		if(containerid == -1)
-			containerid = "root"; // The order "<rootid>::<subgraphid>:" is not standard in graphml, so we have to be explicit about being the root
-		else
-			containerid = agraphid.slice(0, containerid+1);
-		var containergraph = graphs3[containerid];
-		if(!containergraph) {
-			console.log("When trying to build subgraph hierarchy, could not find the container of "+agraphid+" - "+containerid+"; added to root instead");
-			containergraph = graphs3.root;
-		}
-		containergraph.setSubgraph(agraphid, agraph);
-		graphs3[agraphid] = agraph;
-	}
-	structures.subgraphs = graphs3;
-}
-
-/**
- * Add elements a preliminary subgraph structure.
- * Three tasks exist that need to be performed for valid subgraphing:
- * 1) set a root graph;
- * 2) make some graphs children of another graph based on id notation;
- * 3) make some elements children of a graph based on notation.
- * This method performs the last one.
- * @private
- * @param {Object} structures - an object populated by the information in the file
- * @param {Array[ParsedGraphmlNode]} structures.nodes - an Array of nodes
- * @param {Array[ParsedGraphmlNode]} structures.edges - an Array of edges
- * @param {Array[ParsedGraphmlNode]} structures.hyperedges - an Array of hyperedges
- * @param {Object} structures.subgraphs - an Map of ids to graphs that exists independently of the subgraphing organization
- * @param {Graph} structures.subgraphs.root - a fixed mapping to the root graph of on which all other graphs are included
- */
-GraphmlCanvas.prototype.arrangeElementsInSubgraphs = function(structures) {
-	var structuresGroups = ["nodes", "edges", "hyperedges"];
-	var subgraphs = structures.subgraphs;
-	
-	for(var i1 = 0, j1 = 3; i1 < j1; i1++) {
-		var tag = structuresGroups[i1];
-		var promotedTag = tag.charAt(0).toUpperCase() + tag.slice(1, tag.length-1); // e.g., nodes --> Node and edges --> Edge
-		var list = structures[tag];
-		var addFunc = Graph.prototype["add"+promotedTag];
-		for(var i2 = 0, j2 = list.length; i2 < j2; i2++) {
-			var entry = list[i2];
-			var entryid = entry.id;
-			var containerid = entryid.lastIndexOf("::");
-			if(containerid == -1)
-				containerid = "root"; // The order "<rootid>::<subgraphid>:" is not standard in graphml, so we have to be explicit about being the root
-			else
-				containerid = entryid.slice(0, containerid+1);
-			var containergraph = subgraphs[containerid];
-			if(!containergraph) {
-				console.log("When trying to build subgraph hierarchy, could not find the container of "+entryid+" - "+containerid+"; added to root instead");
-				containergraph = graphs3.root;
-			}
-			addFunc.call(containergraph, entryid); // Function for adding to graph
-		}
-	}
-}
-
 GraphmlCanvas.prototype.zoom = function(factor) {
 	console.log("Can not zoom by default.  Setup zooming based through(for) a namespace.");
 }
@@ -915,7 +910,18 @@ GraphmlPaper.prototype.setRootGraph = function(graph) {
  * @returns {Object} a live mapping of all of the nodes
  */
 GraphmlPaper.prototype.getNodes = function() {
-	return this.nodes;
+	var nodesOut = {};
+	var graphs = [this.graph];
+	for(var i = 0; i < graphs.length; i++) {
+		var graph = graphs[i];
+		var subgraphs = graph.getSubgraphs();
+		for(var id in subgraphs)
+			graphs.push(subgraphs[id]);
+		var nodes = graph.getNodes();
+		for(var id in nodes)
+			nodesOut[id] = nodes[id];
+	}
+	return nodesOut;
 }
 
 /**
@@ -936,7 +942,15 @@ GraphmlPaper.prototype.setNodes = function(nodes) {
  * @returns {Node} the requested node
  */
 GraphmlPaper.prototype.getNode = function(id) {
-	return this.nodes[id];
+	var subgraphAddress = id.split("::");
+	subgraphAddress.pop();
+	var graph = this.graph;
+	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
+		graph = graph.getSubgraph( subgraphAddress[i]+":");
+		if(!graph)
+			return null;
+	}
+	return graph.getNode(id);
 }
 
 /**
@@ -947,10 +961,18 @@ GraphmlPaper.prototype.getNode = function(id) {
  * @returns {Node} the previous node that belonged to this id, if any
  */
 GraphmlPaper.prototype.setNode = function(id, node) {
-	var nodes = this.nodes;
-	var oldNode = nodes[id];
-	nodes[id] = node;
-	return oldNode;
+	var subgraphAddress = id.split("::");
+	subgraphAddress.pop();
+	var graph = this.graph;
+	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
+		graph = graph.getSubgraph( subgraphAddress[i]+":");
+		if(!graph)
+			return null;
+	}
+	if(node)
+		return graph.addNode(id, node);
+	else
+		return graph.removeNode(id);
 }
 
 /**
@@ -958,7 +980,18 @@ GraphmlPaper.prototype.setNode = function(id, node) {
  * @returns {Object} a live mapping of all of the edges
  */
 GraphmlPaper.prototype.getEdges = function() {
-	return this.edges;
+	var edgesOut = {};
+	var graphs = [this.graph];
+	for(var i = 0; i < graphs.length; i++) {
+		var graph = graphs[i];
+		var subgraphs = graph.getSubgraphs();
+		for(var id in subgraphs)
+			graphs.push(subgraphs[id]);
+		var edges = graph.getEdges();
+		for(var id in edges)
+			edgesOut[id] = edges[id];
+	}
+	return edgesOut;
 }
 
 /**
@@ -979,7 +1012,15 @@ GraphmlPaper.prototype.setEdges = function(edges) {
  * @returns {Edge} the requested edge
  */
 GraphmlPaper.prototype.getEdge = function(id) {
-	return this.edges[id];
+	var subgraphsAddress = id.split("::");
+	subgraphAddress.pop();
+	var graph = this.graph;
+	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
+		graph = graph.getSubgraph( subgraphAddress[i]+":");
+		if(!graph)
+			return null;
+	}
+	return graph.getEdge(id);
 }
 
 /**
@@ -990,10 +1031,18 @@ GraphmlPaper.prototype.getEdge = function(id) {
  * @returns {Edge} the previous edge that belonged to this id, if any
  */
 GraphmlPaper.prototype.setEdge = function(id, edge) {
-	var edges = this.edges;
-	var oldEdge = edges[id];
-	edges[id] = edge;
-	return oldEdge;
+	var subgraphAddress = id.split("::");
+	subgraphAddress.pop();
+	var graph = this.graph;
+	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
+		graph = graph.getSubgraph( subgraphAddress[i]+":");
+		if(!graph)
+			return null;
+	}
+	if(edge)
+		return graph.addEdge(id, edge);
+	else
+		return graph.removeEdge(id);
 }
 
 /**
@@ -1001,7 +1050,18 @@ GraphmlPaper.prototype.setEdge = function(id, edge) {
  * @returns {Object} a live mapping of all of the hyperedges
  */
 GraphmlPaper.prototype.getHyperedges = function() {
-	return this.hyperedges;
+	var edgesOut = {};
+	var graphs = [this.graph];
+	for(var i = 0; i < graphs.length; i++) {
+		var graph = graphs[i];
+		var subgraphs = graph.getSubgraphs();
+		for(var id in subgraphs)
+			graphs.push(subgraphs[id]);
+		var edges = graph.getHyperedges();
+		for(var id in edges)
+			edgesOut[id] = edges[id];
+	}
+	return edgesOut;
 }
 
 /**
@@ -1020,7 +1080,15 @@ GraphmlPaper.prototype.setHyperedges = function(hyperedges) {
  * @returns {Hyperedge} the requested hyperedge
  */
 GraphmlPaper.prototype.getHyperedge = function(id) {
-	return this.hyperedges[id];
+	var subgraphAddress = id.split("::");
+	subgraphAddress.pop();
+	var graph = this.graph;
+	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
+		graph = graph.getSubgraph( subgraphAddress[i]+":");
+		if(!graph)
+			return null;
+	}
+	return graph.getHyperedge(id);
 }
 
 /**
@@ -1031,10 +1099,17 @@ GraphmlPaper.prototype.getHyperedge = function(id) {
  * @returns {Hyperedge} the previous hyperedge that belonged to this id, if any
  */
 GraphmlPaper.prototype.setHyperedge = function(id, hyperedge) {
-	var hyperedges = this.hyperedges;
-	var oldHyperedge = hyperedges[id];
-	hyperedges[id] = hyperedge;
-	return oldHyperedge;
+	var subgraphsAddress = id.split("::");
+	var graph = this.graph;
+	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
+		graph = graph.getSubgraph( subgraphAddress[i]+":");
+		if(!graph)
+			return null;
+	}
+	if(hyperedge)
+		return graph.addHyperedge(id, hyperedge);
+	else
+		return graph.removeHyperedge(id);
 }
 
 /**
@@ -1042,7 +1117,18 @@ GraphmlPaper.prototype.setHyperedge = function(id, hyperedge) {
  * @returns {Object} a live mapping of all of the graphs
  */
 GraphmlPaper.prototype.getSubgraphs = function() {
-	return this.subgraphs;
+	var graphsOut = {};
+	var graphs = [this.graph];
+	for(var i = 0; i < graphs.length; i++) {
+		var graph = graphs[i];
+		var subgraphs = graph.getSubgraphs();
+		for(var id in subgraphs) {
+			var subgraph = subgraphs[id];
+			graphs.push(subgraph);
+			graphsOut[id] = subgraph;
+		}
+	}
+	return graphsOut;
 }
 /**
  * For internal use only.
@@ -1071,7 +1157,18 @@ GraphmlPaper.prototype.setGraphs = GraphmlPaper.prototype.setSubgraphs;
  * @returns {Graph} the requested graph
  */
 GraphmlPaper.prototype.getSubgraph = function(id) {
-	return this.subgraphs[id];
+	var subgraphAddress = id.split("::");
+	var graph = this.graph;
+	var i = 0;
+	if(subgraphAddress[0] == "root" || subgraphAddress[0] == graph.getId())
+		i = 1;
+	
+	for(var j = subgraphAddress.length; i < j; i++) {
+		graph = graph.getSubgraph( subgraphAddress[i]+":");
+		if(!graph)
+			return null;
+	}
+	return graph;
 }
 /**
  * For internal use only.
@@ -1086,10 +1183,24 @@ GraphmlPaper.prototype.getGraph = GraphmlPaper.prototype.getSubgraph;
  * @returns {Graph} the previous subgraph that belonged to this id, if any
  */
 GraphmlPaper.prototype.setSubgraph = function(id, subgraph) {
-	var subgraphs = this.subgraphs;
-	var oldSubgraph = subgraphs[id];
-	subgraphs[id] = subgraph;
-	return oldSubgraph;
+	var subgraphAddress = id.split("::");
+	var newGraphId = subgraphAddress.pop();
+	var graph = this.graph;
+	if(graph == null) {
+		this.graph = subgraph;
+		return null;
+	}
+	else {
+		for(var i = 0, j = subgraphAddress.length; i < j; i++) {
+			graph = graph.getSubgraph( subgraphAddress[i]+":");
+			if(!graph)
+				return null;
+		}
+		if(subgraph)
+			return graph.addSubgraph(newGraphId, subgraph);
+		else
+			return graph.removeSubgraph(newGraphId);
+	}
 }
 /**
  * For internal use only.
@@ -1229,27 +1340,41 @@ GraphmlPaper.prototype.draw = function(canvas) {
 	if(!root)
 		return;
 	
-	this.drawNodes(canvas, root);
-	this.drawEdges(canvas, root);
-	this.drawHyperedges(canvas, root);
+	this.drawGraph(canvas, root);
 	canvas.center();
+}
+
+/**
+ * na
+ * @private
+ * @param {GraphmlCanvas} canvas - the canvas onto which this graph is being drawn
+ * @param {Graph} graph - the subgraph whose node elements are currently be drawn
+ */
+GraphmlPaper.prototype.drawGraph = function(canvas, graph) {
+	this.drawNodes(canvas, graph);
+	this.drawEdges(canvas, graph);
+	this.drawHyperedges(canvas, graph);
+	
+	var subgraphs = graph.getSubgraphs();
+	for(var id in subgraphs)
+		this.drawGraph(canvas, subgraphs[id]);
 }
 
 /**
  * Draw all nodes on this paper in order of the subgraph organization.
  * @param {GraphmlCanvas} canvas - the canvas onto which this graph is being drawn
- * @param {Graph} graph - the subgraph whose node elements are currently be drawn
+ * @param {Graph} subgraph - the subgraph whose node elements are currently be drawn
  */
-GraphmlPaper.prototype.drawNodes = function(canvas, graph) {
-	var gid = graph.getId();
-	var localNodes = graph.getNodes();
-	for(var i1 = 0, j1 = localNodes.length; i1 < j1; i1++) {
-		var node = this.getNode(localNodes[i1]);
-		canvas.setToContentLayer( node.createElement(), gid );
-		
-		var localGraphs = node.getSubgraphs();
-		for(var i2 = 0, j2 = localGraphs.length; i2 < j2; i2++)
-			this.drawNodes(canvas, this.getSubgraph(localGraphs[i2]));
+GraphmlPaper.prototype.drawNodes = function(canvas, subgraph) {
+	var gid = subgraph.getId();
+	var localNodes = subgraph.getNodes();
+	for(var id in localNodes) {
+		var localNode = localNodes[id];
+		canvas.setToContentLayer( localNode.createElement(), gid );
+	
+		/* var subgraphs = localNode.getSubgraphs();
+		for(var id in subgraphs)
+			this.drawGraph(canvas, subgraphs[id]);*/
 	}
 }
 
@@ -1259,15 +1384,10 @@ GraphmlPaper.prototype.drawNodes = function(canvas, graph) {
  * @param {Graph} subgraph - the subgraph whose edge elements are currently be drawn
  */
 GraphmlPaper.prototype.drawEdges = function(canvas, subgraph) {
+	var gid = subgraph.getId();
 	var localEdges = subgraph.getEdges();
-	for(var i = 0, j = localEdges.length; i < j; i++) {
-		var edge = this.getEdge(localEdges[i]);
-		canvas.setToContentLayer( edge.createElement() );
-	}
-	
-	var subgraphs = subgraph.getSubgraphs();
-	for(var id in subgraphs)
-		this.drawEdges(canvas, subgraphs[id]);
+	for(var id in localEdges)
+		canvas.setToContentLayer( localEdges[id].createElement(), gid );
 }
 
 /**
@@ -1276,15 +1396,10 @@ GraphmlPaper.prototype.drawEdges = function(canvas, subgraph) {
  * @param {Graph} subgraph - the subgraph whose hyoperedge elements are currently be drawn
  */
 GraphmlPaper.prototype.drawHyperedges = function(canvas, subgraph) {
+	var gid = subgraph.getId();
 	var localHyperedges = subgraph.getHyperedges();
-	for(var i = 0, j = localHyperedges.length; i < j; i++) {
-		var hedge = this.getHyperedge(localHyperedges[i]);
-		canvas.setToContentLayer( hedge.createElement() );
-	}
-	
-	var subgraphs = subgraph.getSubgraphs();
-	for(var id in subgraphs)
-		this.drawHyperedges(canvas, subgraphs[id]);
+	for(var id in localHyperedges)
+		canvas.setToContentLayer( localHyperedges[id].createElement(), gid );
 }
 
 /**
