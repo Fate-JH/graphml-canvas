@@ -25,25 +25,32 @@ GraphmlNamespace.get = function(uri) {
  * @property {Object} classList - a mapping of namespace-scoped classes
  * @property {String} s in classList - the name of a class
  * @property {Function} classList[s] - the constructor for the class
- * @property {Boolean} isScoped - whether or not this namespace is available (scoped) to other elements in this environment
+ * @property {Boolean} attributes.isScoped - whether or not this namespace is available (scoped) to other elements in this environment
  * @constructor
  * @param {String} uri - the unique namespace URI
- * @param {Boolean} unscoped - optional; if evaluated to false, add this namespace to the scope upon creation
+ * @param {Object} attributes - information pertinent to the initialization of this namespace
+ * @param {Array[String]} attributes.classList - optional; a list of file paths to classes to be loaded into this namespace
+ * @param {Boolean} attributes.unscoped - optional; if evaluated to false, add this namespace to the scope upon creation
  */
 /*
 A namespace is scoped when it is available in a particular environment, i.e., the document.
-A class is scoped when it is added to a namespace.  Class scoping is neither strict nor reflexive.
+A class is scoped when it is added to a namespace.
+Class scoping is neither strict nor reflexive.
 */
-function GraphmlNamespace(uri, unscoped) {
+function GraphmlNamespace(uri, attributes) {
 	this.uri = uri;
 	this.classList = {};
 	this.isScoped = false;
 	
+	if(attributes && attributes.classList)
+		GraphmlNamespaceClassLoader(attributes.classList, this);
+	
+	var unscoped = attributes && attributes.unscoped === true;
 	if(!unscoped) {
 		if(!GraphmlNamespace.get(uri))
 			this.scope();
 		else
-			console.log("Namespace: not allowed to scope a new namespace that already is defined within the same scope - "+schema);
+			console.log("Namespace: not allowed to scope a new namespace that already is defined within the same scope - "+uri);
 	}
 }
 
@@ -234,4 +241,94 @@ GraphmlNamespace.prototype.toString = function() {
 	output += "}";
 	
 	return output;
+}
+
+
+/**
+ * Function to sequentially load classes belonging to a namespace.
+ * @static
+ * @param {Array[String]} classArray - an Array of file paths to the classes
+ * @param {GraphmlNamespace} namespace - optional; the namespace into which the classes are ultimately scoped when loaded
+ */
+function GraphmlNamespaceClassLoader(classArray, namespace) {
+	if(classArray && classArray.length)
+		GraphmlNamespaceClassLoader.load(classArray, namespace);
+}
+/**
+ * An Array that stores all the loading tasking.
+ * @private
+ * @static
+ */
+GraphmlNamespaceClassLoader.loaderList = [];
+
+/**
+ * Function to process tasking to sequentially load classes belonging to a namespace.
+ * @static
+ * @param {Array[String]} classArray - an Array of file paths to the classes
+ * @param {GraphmlNamespace} namespace - optional; the namespace into which the classes are ultimately scoped when loaded
+ */
+GraphmlNamespaceClassLoader.load = function(classArray, namespace) {
+	var src = document.currentScript.getAttribute("src");
+	
+	var entry = {};
+	entry.namespace = namespace;
+	entry.classList = classArray;
+	entry.folder = src.slice(0, src.lastIndexOf("/")+1);
+	
+	var loaderList = GraphmlNamespaceClassLoader.loaderList;
+	var len = loaderList.length; // Before adding the new task
+	loaderList.push(entry);
+	
+	if(!len) // Only fire if this was the first task
+		GraphmlNamespaceClassLoader.loadNextClass();
+}
+
+/**
+ * Extract the next class from the current task and load it.
+ * @private
+ * @static
+ */
+GraphmlNamespaceClassLoader.loadNextClass = function() {
+	var loaderList = GraphmlNamespaceClassLoader.loaderList;
+	
+	if(loaderList && loaderList.length) {
+		var entry = loaderList[0];
+		GraphmlNamespaceClassLoader.loader(entry.classList.shift(), entry.namespace, entry.folder);
+		if(!entry.classList.length) // If this task has no more classes to load, remove it
+			loaderList.shift();
+	}
+}
+
+/**
+ * Add the specified JavaScript class by adding an enclosing <script> tag.
+ * Register callback functions.
+ * @private
+ * @static
+ * @param {String} src - the file path to a class
+ * @param {GraphmlNamespace} namespace - optional; the namespace into which the classes are ultimately scoped when loaded
+ * @param {String} folder - optional; additional file path information to be appended as a prefix, if it is passed
+ */
+GraphmlNamespaceClassLoader.loader = function(src, namespace, folder) {
+	folder = folder || "";
+	
+	var script = document.createElement("script");
+	script.src = folder + src;
+	script.type = "text/javascript";
+	
+	script.onload = script.onreadystatechange = function(evt) { // Callback for the script completely being loaded
+		script.onload = script.onreadystatechange = script.onerror = null;
+		if(namespace) { // If a namespace, scope the class for that namespace
+			var className = script.getAttribute("src");
+			className = className.slice(className.lastIndexOf("/")+1, className.length-3); // .../File.js --> File
+			namespace.setSpecificClass(null, window[className]); // If the class failed to load, we will do nothing
+		}
+		GraphmlNamespaceClassLoader.loadNextClass(); // Next class
+	}
+	script.onerror = function(evt) { // Precautionary callback for the script failing
+		script.onload = script.onreadystatechange = script.onerror = null;
+		GraphmlNamespaceClassLoader.loadNextClass(); // Next class
+	}
+	
+	var head = document.getElementsByTagName("head")[0];
+	(head || document.body).appendChild(script);
 }
