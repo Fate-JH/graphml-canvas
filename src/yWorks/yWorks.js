@@ -29,7 +29,7 @@ yWorks.setup = function(canvas, graph, xml, attributes) {
 	yWorks.setElementsInView(graph);
 	yWorks.clipEdgeEndpointsToNodes(canvas, graph);
 	yWorks.allocateSVGResources(graph, xml);
-	canvas.zoom = yWorks.zoom; //assign
+	//canvas.zoom = yWorks.zoom;
 }
 
 /**
@@ -99,8 +99,8 @@ yWorks.setElementsInView = function(graph) {
 		uppery = 0;
 	
 	var graphData = graph.getGraphData();
-	graphData.x = lowerx;
-	graphData.y = lowery;
+	graphData.x = -lowerx;
+	graphData.y = -lowery;
 	graphData.width = (upperx - lowerx);
 	graphData.height = (uppery - lowery);
 	
@@ -435,21 +435,21 @@ yWorks.drawBackground = function(canvas, attributes) {
 	}
 	attributes = attributes || {};
 	var graphData = graph.getGraphData();
-	var zoomFactor = canvas.getGraphData().zoom;
-	var graphWidth = graph.getWidth(canvas);
-	var graphHeight = graph.getHeight(canvas);
+	var canvasData = canvas.getGraphData();
 	
+	var zoomFactor = canvasData.zoom;
 	var lineHorSpan = graphData.span * zoomFactor;
 	var lineVerSpan = graphData.span * zoomFactor;
+	var startX = (graphData.x + canvasData.x) % lineHorSpan; // Combine centering offset of graph elements and scroll offset of graph
+	var startY = (graphData.y + canvasData.y) % lineVerSpan;
+	
 	var gridListHor = "", gridListVer = "";
-	for(var j = graphWidth, i = j % lineHorSpan, k = graphHeight; i <= j; i += lineHorSpan) {
-		gridListHor += " M "+(i)+" 0";
-		gridListHor += " L "+(i)+" "+(k);
-	}
-	for(var j = graphHeight, i = j % lineVerSpan, k = graphWidth; i <= j; i += lineVerSpan) {
-		gridListVer += " M 0 "+(i);
-		gridListVer += " L "+(k)+" "+(i);
-	}
+	var graphWidth = canvas.getHorizontalCanvasSpace();
+	var graphHeight = canvas.getVerticalCanvasSpace();
+	for(var i = startX, j = graphHeight; i <= graphWidth; i += lineHorSpan)
+		gridListHor += " M "+(i)+" 0 L "+(i)+" "+(j);
+	for(var i = startY, j = graphWidth; i <= graphHeight; i += lineVerSpan)
+		gridListVer += " M 0 "+(i)+" L "+(j)+" "+(i);
 	
 	var svgns = "http://www.w3.org/2000/svg";
 	var svg = document.createElementNS(svgns, "svg"), path, style;

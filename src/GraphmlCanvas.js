@@ -13,6 +13,8 @@ function GraphmlCanvas(attributes) {
 	this.graph = null;
 	this.defaultGraph = null;
 	this.graphData = {
+		x:0,
+		y:0,
 		dx:0,
 		dy:0,
 		zoom:1,
@@ -94,24 +96,25 @@ GraphmlCanvas.prototype.findCanvas = function(attributes) {
  * na
  */
 GraphmlCanvas.prototype.setScroll = function(scrollState) {
-	var oldState = this.graphData.scrollState
-	this.graphData.scrollState = scrollState;
+	var graphData = this.graphData;
+	var oldState = graphData.scrollState;
+	graphData.scrollState = scrollState;
 	var canvas = this.canvas;
 	if(scrollState != oldState) {
 		if(scrollState) {
 			if(canvas) {
 				canvas.addEventListener("mousedown", GraphmlCanvas.prototype.scrollmdown.bind(this));
 				canvas.addEventListener("mousemove", GraphmlCanvas.prototype.scrollmmove.bind(this));
-				canvas.addEventListener("mouseup", GraphmlCanvas.prototype.scrollmup.bind(this));
+				canvas.addEventListener("mouseup", GraphmlCanvas.prototype.scrollmout.bind(this));
 			}
 		}
 		else {
 			if(canvas) {
 				canvas.removeEventListener("mousedown", GraphmlCanvas.prototype.scrollmdown.bind(this));
 				canvas.removeEventListener("mousemove", GraphmlCanvas.prototype.scrollmmove.bind(this));
-				canvas.removeEventListener("mouseup", GraphmlCanvas.prototype.scrollmup.bind(this));
+				canvas.removeEventListener("mouseup", GraphmlCanvas.prototype.scrollmout.bind(this));
 			}
-			data.scrollLock = false;
+			graphData.scrollLock = false;
 		}
 	}
 }
@@ -137,6 +140,8 @@ GraphmlCanvas.prototype.scrollmdown = function(evt) {
 		
 		contentLeft = contentLeft.slice(0, contentLeft.length-2);
 		contentTop = contentTop.slice(0, contentTop.length-2);
+		data.x = contentLeft;
+		data.y = contentTop;
 		data.dx = evt.clientX - contentLeft;
 		data.dy = evt.clientY - contentTop;
 		data.scrollLock = true;
@@ -159,8 +164,14 @@ GraphmlCanvas.prototype.scrollmmove = function(evt) {
 	var data = this.graphData;
 	if(data.scrollLock) {
 		var content = this.getContentLayer();
-		content.style.left = (evt.clientX - data.dx)+"px";
-		content.style.top = (evt.clientY - data.dy)+"px";
+		data.x = (evt.clientX - data.dx);
+		data.y = (evt.clientY - data.dy);
+		content.style.left = data.x+"px";
+		content.style.top = data.y+"px";
+		// Redraw background layer
+		canvas.clearBackgroundLayer();
+		canvas.getGraph().drawBackground(this);
+		// Stop event bubbling
 		evt.preventDefault();
 		evt.cancelBubble = true;
 	}
@@ -202,6 +213,9 @@ GraphmlCanvas.prototype.setGraph = function(newGraph) {
 	if(prevGraph) { // Remove the previous graph
 		this.clearContentLayer();
 		this.clearBackgroundLayer();
+		this.setScroll(false);
+		this.graphData.x = 0;
+		this.graphData.y = 0;
 		//this.zoom(1); // Restore the default zoom
 	}
 	
@@ -216,59 +230,85 @@ GraphmlCanvas.prototype.setGraph = function(newGraph) {
 }
 
 /**
- * Get the width of the canvas, including the scrollbar.
+ * Determine whether the scroll bars are visible.
+ * @param {Boolean} true, if the scrollbar can be seen and manipulated; false, otherwise
+ */
+GraphmlCanvas.prototype.areScrollBarsVisible = function() {
+	var canvas = this.getCanvas();
+	if(!canvas)
+		return {horizontal:false, vertical:false};
+	
+	var overflow = window.getComputedStyle(canvas).overflow;
+	if(overflow == "visible" || overflow == "hidden") {
+		return { horizontal:false, vertical:false };
+	}
+	else {
+		return {
+			horizontal:canvas.scrollWidth > canvas.clientWidth,
+			vertical:canvas.scrollHeight > canvas.clientHeight
+		};
+	}
+}
+
+/**
+ * Get the width of the canvas, excluding the scrollbar.
  * @returns {Integer} The width of the DOMElement associated as the canvas; 0, if nothing is associated
  */
 GraphmlCanvas.prototype.getWidth = function() {
 	var canvas = this.canvas;
-	return canvas ? ((canvas.style && canvas.style.width) || canvas.width || canvas.offsetWidth) : 0;
+	return canvas ? canvas.clientWidth : 0;
 }
 
 /**
- * Get the height of the canvas, including the scrollbar.
+ * Get the width of the canvas, including the scrollbar.
+ * @returns {Integer} The width of the DOMElement associated as the canvas; 0, if nothing is associated
+ */
+GraphmlCanvas.prototype.getHorizontalCanvasSpace = function() {
+	var canvas = this.canvas;
+	return canvas ? this.getWidth() - (this.areScrollBarsVisible().horizontal ? 17 : 0) : 0;
+}
+
+/**
+ * Get the height of the canvas, excluding the scrollbar.
  * @returns {Integer} The height of the DOMElement associated as the canvas; 0, if nothing is associated
  */
 GraphmlCanvas.prototype.getHeight = function() {
 	var canvas = this.canvas;
-	return canvas ? ((canvas.style && canvas.style.height) || canvas.height || canvas.offsetHeight) : 0;
+	return canvas ? canvas.clientHeight : 0;
 }
 
 /**
- * Determine whether the horizontal scroll bar is selectable.
- * If the scrollbar is not visible by way of this check, that also means the graph currently fits onto a single page horizontally.
- * @param {Boolean} true, if the scrollbar can be seen and manipulated; false, otherwise
+ * Get the width of the canvas, including the scrollbar.
+ * @returns {Integer} The width of the DOMElement associated as the canvas; 0, if nothing is associated
  */
-GraphmlCanvas.prototype.isScrollBarHorizontalVisible = function() {
-	var graph = this.getGraph();
-	return !(!graph || this.getWidth() >= graph.getWidth(this));
+GraphmlCanvas.prototype.getVerticalCanvasSpace = function() {
+	var canvas = this.canvas;
+	return canvas ? this.getHeight() - (this.areScrollBarsVisible().horizontal ? 20 : 0) : 0;
 }
 
 /**
- * Get the length of the horizontal scroll control on the canvas.
- * An active control always has a length of the width of the canvas minus 17.
- * @returns {Number} the length, or 0 if the control can not be manipulated (right now)
+ * Center the graph on the canvas.
  */
-GraphmlCanvas.prototype.getScrollBarHorizontalLength = function() {
-	return this.getWidth() - 17;
-}
-
-/**
- * Determine whether the vertical scroll bar is selectable.
- * If the scrollbar is not visible by way of this check, that also means the graph currently fits onto a single page vertically.
- * @param {Boolean} true, if the scrollbar can be seen and manipulated; false, otherwise
- */
-GraphmlCanvas.prototype.isScrollBarVerticalVisible = function() {
-	var graph = this.getGraph();
-	return !(!graph || this.getHeight() >= graph.getHeight(this));
-}
-
-/**
- * Get the length of the vertical scroll control on the canvas.
- * An active control always has a length of the height of the canvas minus 20.
- * @returns {Number} the length, or 0 if the control can not be manipulated (right now)
- */
-GraphmlCanvas.prototype.getScrollBarVerticalLength = function() {
-	return this.getHeight() - 20;
+GraphmlCanvas.prototype.center = function() {
+	var canvas = this.canvas;
+	if(!canvas)
+		return;
+	
+	var graph = this.graph;
+	var data = this.graphData;
+	var content = this.getContentLayer().style;
+	if(!graph) {
+		data.x = this.getHorizontalCanvasSpace()/2;
+		data.y = this.getVerticalCanvasSpace()/2;
+	}
+	else {
+		data.x = this.getHorizontalCanvasSpace()/2 - graph.getWidth()/2;
+		data.y = this.getVerticalCanvasSpace()/2 - graph.getHeight()/2;
+		this.clearBackgroundLayer();
+		graph.drawBackground(this); // Redraw the background
+	}
+	content.left = data.x + "px";
+	content.top = data.y + "px";
 }
 
 /**
@@ -279,47 +319,22 @@ GraphmlCanvas.prototype.getScrollBarVerticalLength = function() {
  * @returns {Number} o.y - the y-coordinate of the center
  */
 GraphmlCanvas.prototype.getGraphCenterCoordinates = function(frontOfScrollbar) {
-	var obj = {x:0, y:0};
 	var canvas = this.canvas;
 	if(!canvas)
 		throw new Error("Can not calculate the center of a graph on a canvas element when not assigned a canvas element.");
 	
-	obj.x = this.getWidth()/2;
-	obj.y = this.getHeight()/2;
-	var graph = this.graph;
-	if(this.graph) {
-		if(this.isScrollBarHorizontalVisible()) { // multiple horizontal pages
-			obj.x = canvas.scrollLeft;
-			if(frontOfScrollbar)
-				obj.x += this.getScrollBarHorizontalLength()/2;
-		}
-		if(this.isScrollBarVerticalVisible()) { // multiple vertical pages
-			obj.y = canvas.scrollTop;
-			if(frontOfScrollbar)
-				obj.y += this.getScrollBarVerticalLength()/2;
-		}
-	}
-	return obj;
-}
-
-/**
- * Center the graph (by manipulating the scroll bars).
- */
-GraphmlCanvas.prototype.center = function() {
-	var canvas = this.canvas;
-	if(!canvas)
-		return;
+	var canvasData = this.graphData;
+	var graphData = this.graph ? this.graph.getGraphData() : { x:0, y:0 };
 	
-	var graph = this.graph;
-	var content = this.getContentLayer().style;
-	if(!graph) {
-		content.left = "0px";
-		content.top = "0px";
-	}
-	else {
-		content.left = (this.getScrollBarHorizontalLength()/2 - graph.getWidth()/2) + "px";
-		content.top = (this.getScrollBarVerticalLength()/2 - graph.getHeight()/2) + "px";
-	}
+	var originX = canvasData.x + graphData.x;
+	var originY = canvasData.y + graphData.y;
+	var canvasCenterX = this.getHorizontalCanvasSpace()/2;
+	var canvasCenterY = this.getVerticalCanvasSpace()/2;
+	
+	return {
+		x:canvasCenterX - originX,
+		y:originY - canvasCenterY // graph is positive-up, negative-down; HTML is negative-up, positive-down
+	};
 }
 
 /**
@@ -739,7 +754,7 @@ GraphmlCanvas.prototype.pairNamespaceFromHeader = function(elem, namespaces) {
 		var tags = tagName.split(":");
 		if(tags[0] in namespaces) {
 			var prefix = namespaces[tags[0]]; // The PREFIX will point to a namespace defined in this graph
-			return {namespace:prefix, representation:tags[1].slice(0)};
+			return {namespace:prefix[0], representation:tags[1].slice(0)};
 		}
 		
 		if(children[i].children.length) { // Exhaustive :/
@@ -778,16 +793,14 @@ GraphmlCanvas.prototype.prepareElements = function(graph, structures, xml) {
 			var entry = list[i2];
 			var entryNamespace = "";
 			var entryRepresentation = null;
-			for(var i3 = 0, j3 = entry.namespace.length; i3 < j3; i3++) {
-				var entryPrefix = entry.namespace[i3];
-				entryNamespace = GraphmlNamespace.get(entryPrefix);
-				if(entryNamespace) {
-					entryRepresentation = entryNamespace.getSpecificClass(entry.representation); // This is the specific namespace representation of the data
-					if(!graph.getNamespace(entryPrefix)) { // We don't want to allocate a used namespace more than once
-						graph.setNamespace(entryPrefix, entryNamespace)
-						usedNamespaces.push(entryNamespace);
-					}
-					break;
+			
+			var entryPrefix = entry.namespace;
+			entryNamespace = GraphmlNamespace.get(entryPrefix);
+			if(entryNamespace) {
+				entryRepresentation = entryNamespace.getSpecificClass(entry.representation); // This is the specific namespace representation of the data
+				if(!graph.getNamespace(entryPrefix)) { // We don't want to allocate a used namespace more than once
+					graph.setNamespace(entryPrefix, entryNamespace)
+					usedNamespaces.push(entryNamespace);
 				}
 			}
 			
@@ -830,7 +843,7 @@ GraphmlCanvas.setTransform = function(transform, style) {
  */
 GraphmlCanvas.ParsedGraphmlNode = function(id, namespace, representation, data) {
 	this.id = id || "";
-	this.namespace = namespace || [];
+	this.namespace = namespace || null;
 	this.representation = representation || "";
 	this.data = data;
 }
@@ -1216,6 +1229,59 @@ GraphmlPaper.prototype.getNamespaces = function() {
 }
 
 /**
+ * Retrieve an element and useful information about the element from the displayed graph.
+ * Although beyond the scope of the class, if an HTML element with the same id as the element exists, that is retrieved as well.
+ * @param {String} id - The unique identifier of the graph element
+ * @returns {Object} obj - na
+ * @returns {Object} obj.id - the unique identifier of the graph element (not repeated from parameter)
+ * @returns {Number} obj.x - the x-coordinate of the element relative to the origin of the graph
+ * @returns {Number} obj.y - the y-coordinate of the element relative to the origin of the graph
+ * @returns {String} obj.type - the Graphml type of element that was recovered (Node, Edge, Hyperedge)
+ * @returns {String} obj.ns - the namespace URI that the element's representation uses
+ * @returns {String} obj.nstype - the namespace-scoped type of element's representation
+ * @returns {Object} obj.elem - the elem recovered from the graph's data
+ * @returns {DOMElement} obj.dom - the onscreen element recovered from the HTML document
+ */
+GraphmlPaper.prototype.getGraphElement = function(id) {
+	var elem = null;
+	for(var i = 0, getCategoryFuncs = ["getNodes", "getEdges", "getHyperedges"]; i < 3; i++) {
+		var elems = GraphmlPaper.prototype[getCategoryFuncs[i]].call(this);
+		if(id in elems) {
+			elem = elems[id];
+			break;
+		}
+	}
+	if(!elem) // Can not find the element by id
+		return null;
+	
+	var elemRep = elem.getRepresentation();
+	var obj = {};
+	obj.id = elem.getId();
+	obj.x = 0;
+	obj.y = 0;
+	obj.type = elem.constructor.name;
+	obj.ns = "";
+	obj.nstype = elemRep && elemRep.constructor.name;
+	obj.elem = elem;
+	obj.dom = document && document.getElementById(id); // If this element is being depicted
+	if(elemRep) { // Elem has visualization and a coordinate location on the graph
+		var namespaces = this.getNamespaces();
+		var elemRepConstructor = elemRep.constructor;
+		var nstype = obj.nstype;
+		for(var uri in namespaces) {
+			if(namespaces[uri].getSpecificClass(nstype) === elemRepConstructor) {
+				obj.ns = uri;
+				break;
+			}
+		}
+		var elemBounds = elem.getBounds();
+		obj.x = this.graphData.x + elemBounds.x;
+		obj.y = this.graphData.y - elemBounds.y;
+	}
+	return obj;
+}
+
+/**
  * Set a new mapping of namespaces used in this graph structure.
  * @param {Object} nspaces - a mapping of namespace schema to namespaces
  * @returns {Object} a mapping of all of the previous namespace schema to namespaces
@@ -1255,9 +1321,7 @@ GraphmlPaper.prototype.getNamespace = function(id) {
 GraphmlPaper.prototype.setNamespace = function(id, nspace) {
 	var namespaces = this.namespaces;
 	var entry = namespaces[id];
-	if(!entry)
-		entry = namespaces[id] = [];
-	entry.push(nspace);
+	namespaces[id] = nspace;
 }
 
 /**
@@ -1335,13 +1399,14 @@ GraphmlPaper.prototype.draw = function(canvas) {
 	}
 	canvas.clearBackgroundLayer();
 	canvas.clearContentLayer();
-	this.drawBackground(canvas);
 	var root = this.getRootGraph();
-	if(!root)
+	if(!root) {
+		this.drawBackground(canvas);
 		return;
+	}
 	
 	this.drawGraph(canvas, root);
-	canvas.center();
+	canvas.center(); // The call to center() draws the background
 }
 
 /**
@@ -1412,21 +1477,23 @@ GraphmlPaper.prototype.drawBackground = function(canvas) {
 		return;
 	}
 	var graphData = this.getGraphData();
-	var zoomFactor = canvas.getGraphData().zoom;
-	var graphWidth = this.getWidth(canvas);
-	var graphHeight = this.getHeight(canvas);
+	var canvasData = canvas.getGraphData();
 	
+	var zoomFactor = canvasData.zoom;
 	var lineHorSpan = graphData.span * zoomFactor;
 	var lineVerSpan = graphData.span * zoomFactor;
+	var x0 = canvasData.x + graphData.x;
+	var y0 = canvasData.y + graphData.y;
+	var startX = x0 % lineHorSpan; // Combine centering offset of graph elements and scroll offset of graph
+	var startY = y0 % lineVerSpan;
+	
 	var gridListHor = "", gridListVer = "";
-	for(var j = graphWidth, i = j % lineHorSpan, k = graphHeight; i <= j; i += lineHorSpan) {
-		gridListHor += " M "+(i)+" 0";
-		gridListHor += " L "+(i)+" "+(k);
-	}
-	for(var j = graphHeight, i = j % lineVerSpan, k = graphWidth; i <= j; i += lineVerSpan) {
-		gridListVer += " M 0 "+(i);
-		gridListVer += " L "+(k)+" "+(i);
-	}
+	var graphWidth = canvas.getHorizontalCanvasSpace();
+	var graphHeight = canvas.getVerticalCanvasSpace();
+	for(var i = startX, j = graphHeight; i <= graphWidth; i += lineHorSpan)
+		gridListHor += " M "+(i)+" 0 L "+(i)+" "+(j);
+	for(var i = startY, j = graphWidth; i <= graphHeight; i += lineVerSpan)
+		gridListVer += " M 0 "+(i)+" L "+(j)+" "+(i);
 	
 	var svgns = "http://www.w3.org/2000/svg";
 	var svg = document.createElementNS(svgns, "svg"), path, style;
@@ -1450,6 +1517,28 @@ GraphmlPaper.prototype.drawBackground = function(canvas) {
 	style.stroke = "#009999";
 	style["stroke-width"] = 0.25;
 	svg.appendChild(path);
+	
+	//debug
+	var center = canvas.getGraphCenterCoordinates();
+	var line = document.createElementNS(svgns, "line");
+	line.setAttributeNS(null, "x1", 0);
+	line.setAttributeNS(null, "x2", graphWidth);
+	line.setAttributeNS(null, "y1", y0);
+	line.setAttributeNS(null, "y2", y0);
+	style = line.style;
+	style.fill = "none"
+	style.stroke = "blue";
+	svg.appendChild(line);
+	
+	line = document.createElementNS(svgns, "line");
+	line.setAttributeNS(null, "x1", x0);
+	line.setAttributeNS(null, "x2", x0);
+	line.setAttributeNS(null, "y1", 0);
+	line.setAttributeNS(null, "y2", graphHeight);
+	style = line.style;
+	style.fill = "none"
+	style.stroke = "blue";
+	svg.appendChild(line);
 	
 	canvas.setToBackgroundLayer(svg);
 }

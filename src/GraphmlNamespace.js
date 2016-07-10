@@ -131,11 +131,11 @@ GraphmlNamespace.prototype.setNamespaceURI = function(uri) {
 	
 	if(this.isScoped) {
 		var namespaces = document.namespaces;
-		if(namespaces[uri]) {
-			console.log("GraphmlNamespace "+oldURI+": not allowed to change to a namespace that already specifies another namespace within this scope");
+		if(namespaces[oldURI]) {
+			console.log("GraphmlNamespace "+oldURI+": not allowed to change a namespace URI while that namespace is scoped");
 			return false;
 		}
-		namespaces[ns] = namespaces[oldURI];
+		namespaces[uri] = namespaces[oldURI];
 		delete namespaces[oldURI];
 	}
 	this.uri = uri;
@@ -188,6 +188,10 @@ GraphmlNamespace.prototype.setSpecificClass = function(name, newClass) {
 	
 	var existingClasses = this.classList;
 	var oldClass = existingClasses[name];
+	if(oldClass && this.isScoped && document.namespaces[this.uri]) {
+		console.log("GraphmlNamespace "+this.uri+": not allowed to change class "+name+" while scoped");
+		return false;
+	}
 	existingClasses[name] = newClass;
 	return true;
 }
@@ -273,7 +277,7 @@ GraphmlNamespaceClassLoader.load = function(classArray, namespace) {
 	var entry = {};
 	entry.namespace = namespace;
 	entry.classList = classArray;
-	entry.folder = src.slice(0, src.lastIndexOf("/")+1);
+	entry.folder = src.slice(0, src.lastIndexOf("/")+1); // File path leading to the namespace header
 	
 	var loaderList = GraphmlNamespaceClassLoader.loaderList;
 	var len = loaderList.length; // Before adding the new task
