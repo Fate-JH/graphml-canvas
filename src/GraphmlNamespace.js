@@ -165,7 +165,7 @@ GraphmlNamespace.prototype.setClasses = function(classlist) {
 }
 
 /**
- * Get a specific class scoped to this namespace
+ * Get a specific class scoped to this namespace.
  * @param {String} name - the identification of a constructor function
  * @returns {Function} the constructor function associated with parameter name
  */
@@ -174,7 +174,7 @@ GraphmlNamespace.prototype.getSpecificClass = function(name) {
 }
 
 /**
- * Include the specific mapped class as a part of this namespace
+ * Include the specific mapped class as a part of this namespace.
  * @param {String} name - the identification of a constructor function; if blank, it is set to the function's name (newClass.name)
  * @param {Function} newClass - the constructor function
  * @returns {Boolean} always returns true at the moment
@@ -188,9 +188,13 @@ GraphmlNamespace.prototype.setSpecificClass = function(name, newClass) {
 	
 	var existingClasses = this.classList;
 	var oldClass = existingClasses[name];
-	if(oldClass && this.isScoped && document.namespaces[this.uri]) {
-		console.log("GraphmlNamespace "+this.uri+": not allowed to change class "+name+" while scoped");
-		return false;
+	if(oldClass) {
+		if(oldClass.constructor === newClass.constructor)
+			return true;
+		else if(this.isScoped && document.namespaces[this.uri]) {
+			console.log("GraphmlNamespace "+this.uri+": not allowed to change class "+name+" while scoped");
+			return false;
+		}
 	}
 	existingClasses[name] = newClass;
 	return true;

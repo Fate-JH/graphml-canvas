@@ -593,13 +593,16 @@ GraphmlCanvas.prototype.transferComplete = function(evt) {
  * @param {XML} xml - na
  */
 GraphmlCanvas.prototype.readXML = function(xml) {
-	var gml = GraphmlCanvas.header(xml);
+	var gml = GraphmlCanvas.getHeader(xml);
 	if(this.validateRequiredNamespaces(gml)) {
 		console.log("Parsing graph data ...");
 		var namespaces = this.extractHeaderNamespaces(gml);
+		var attributes = GraphmlCanvas.getAttributes(gml);
 		var structures = this.readStructures(gml, namespaces);
+		structures.graphmlAttributes = attributes;
 		var name = xml.URL.slice(xml.URL.lastIndexOf("/")+1);
-		var graph = new GraphmlPaper(name);
+		
+		var graph = new GraphmlPaper(name, {graphmlAttributes:attributes});
 		this.prepareElements(graph, structures, gml);
 		this.setGraph(graph);
 	}
@@ -608,10 +611,11 @@ GraphmlCanvas.prototype.readXML = function(xml) {
 /**
  * Rule out everything else but the graph data, from the root of the graph (a <graphml> node).
  * @private
+ * @static
  * @param {XML} xml - na
  * @returns {XML} markup data only specific to the first graphml structure provided in the xml data, or null if none can be found
  */
-GraphmlCanvas.header = function(xml) {
+GraphmlCanvas.getHeader = function(xml) {
 	var g = xml.getElementsByTagName("graphml");
 	if(!g) {
 		console.log("Error when parsing file data - there is no data");
@@ -678,6 +682,48 @@ GraphmlCanvas.prototype.extractHeaderNamespaces = function(xml) {
 			namespaces[tag[1]] = attr.nodeValue.split(" ");
 	}
 	return namespaces;
+}
+
+/**
+ * na
+ * @private
+ * @static
+ * @param {XML} xml - the structured data in xml format, starting at the header
+ * @returns {Object} obj - na
+ * @returns {Object} obj.id - na
+ * @returns {Object} obj.id.id - na
+ * @returns {String} obj.id.'attr.name' - na
+ * @returns {String} obj.id.'attr.type' - na
+ * @returns {String} obj.id.for - na
+ */
+GraphmlCanvas.getAttributes = function(xml) {
+	/*
+	EXAMPLE
+	<key id="d0"  for="graph" attr.name="Description" attr.type="string"/>
+	<key id="d1"  for="port" yfiles.type="portgraphics"/>
+	<key id="d2"  for="port" yfiles.type="portgeometry"/>
+	<key id="d3"  for="port" yfiles.type="portuserdata"/>
+	<key id="d4"  for="node" attr.name="url" attr.type="string"/>
+	<key id="d5"  for="node" attr.name="description" attr.type="string"/>
+	<key id="d6"  for="node" yfiles.type="nodegraphics"/>
+	<key id="d7"  for="graphml" yfiles.type="resources"/>
+	<key id="d8"  for="edge" attr.name="url" attr.type="string"/>
+	<key id="d9"  for="edge" attr.name="description" attr.type="string"/>
+	<key id="d10" for="edge" yfiles.type="edgegraphics"/>
+	*/
+	var obj = {};
+	
+	for(var i1 = 0, g = xml.getElementsByTagName("key"), j1 = g.length; i1 < j1; i1++) {
+		var key = g[i1];
+		var group = {};
+		for(var i2 = 0, attributes = key.attributes, j2 = attributes.length; i2 < j2; i2++) {
+			var attr = attributes[i2];
+			// TODO: validate attributes 'for' and 'attr.type'?
+			group[attr.name] = attr.value;
+		}
+		obj[group.id] = group;
+	}
+	return obj;
 }
 
 /**
@@ -837,7 +883,7 @@ GraphmlCanvas.setTransform = function(transform, style) {
  * An intermediary storage structure for data extracted from graphml nodes during the preliminary parsing phase
  * @private
  * @property {String} id - the id associated with this graphml data
- * @property {Array[String]} namespace - the namespace that governs the specifics of the graphml data
+ * @property {String} namespace - the namespace that governs the specifics of the graphml data
  * @property {String} representation - the specific visualization of this graphml data
  * @property {XML} data - the root of the original graphml data
  */
@@ -878,6 +924,14 @@ function GraphmlPaper(id, attributes) {
 	
 	this.id = id || "new";
 	this.namespaces = {};
+	this.graphmlAttributes = {};
+	this.originalData = null;
+	
+	this.graph = null;
+	this.nodes = {};
+	this.edges = {};
+	this.subgraphs = {};
+	this.hyperedges = {};
 	this.graphData = {
 		x:0,
 		y:0,
@@ -885,15 +939,11 @@ function GraphmlPaper(id, attributes) {
 		height:0,
 		span:25
 	};
-	this.originalData = null;
-	this.graph = null;
-	this.nodes = {};
-	this.edges = {};
-	this.subgraphs = {};
-	this.hyperedges = {};
 	
 	if(cattributes.namespaces)
 		this.setNamespaces(cattributes.namespaces);
+	if(cattributes.graphmlAttributes)
+		this.setGraphmlAttributes(cattributes.graphmlAttributes);
 	if(cattributes.xml)
 		this.unpackXML(cattributes.xml)
 }
@@ -1221,14 +1271,6 @@ GraphmlPaper.prototype.setSubgraph = function(id, subgraph) {
 GraphmlPaper.prototype.setGraph = GraphmlPaper.prototype.setSubgraph;
 
 /**
- * Get all of the namespaces used in this graph structure.
- * @returns {Object} a live mapping of all of the namespaces
- */
-GraphmlPaper.prototype.getNamespaces = function() {
-	return this.namespaces;
-}
-
-/**
  * Retrieve an element and useful information about the element from the displayed graph.
  * Although beyond the scope of the class, if an HTML element with the same id as the element exists, that is retrieved as well.
  * @param {String} id - The unique identifier of the graph element
@@ -1282,13 +1324,21 @@ GraphmlPaper.prototype.getGraphElement = function(id) {
 }
 
 /**
+ * Get all of the namespaces used in this graph structure.
+ * @returns {Object} a live mapping of all of the namespaces
+ */
+GraphmlPaper.prototype.getNamespaces = function() {
+	return this.namespaces;
+}
+
+/**
  * Set a new mapping of namespaces used in this graph structure.
  * @param {Object} nspaces - a mapping of namespace schema to namespaces
  * @returns {Object} a mapping of all of the previous namespace schema to namespaces
  */
 GraphmlPaper.prototype.setNamespaces = function(nspaces) {
-	var namespaces = this.namespaces;
 	if(nspaces) {		
+		var namespaces = this.namespaces;
 		for(var id in nspaces) {
 			if(nspaces[id]) {
 				this.setNamespace(id, nspaces[id]);
@@ -1299,13 +1349,11 @@ GraphmlPaper.prototype.setNamespaces = function(nspaces) {
 			// TODO: remember why this line was left blank	
 		}
 	}
-	else
-		this.namespaces = {};
 }
 
 /**
  * Get a specific namespace used in this graph structure.
- * @param {String} id - the schema used by the namespace
+ * @param {String} id - the uri used by the namespace
  * @returns {GraphmlNamespace} the requested namespace
  */
 GraphmlPaper.prototype.getNamespace = function(id) {
@@ -1315,13 +1363,62 @@ GraphmlPaper.prototype.getNamespace = function(id) {
 /**
  * Set a specific namespace into the mapping of namespace elements with the given id.
  * @param {String} id - the reference to the namespace
- * @param {GraphmlNamespace} subgraph - the new namespace
+ * @param {GraphmlNamespace} nspace - the new namespace
  * @returns {GraphmlNamespace} the previous namespace that belonged to this id, if any
  */
 GraphmlPaper.prototype.setNamespace = function(id, nspace) {
 	var namespaces = this.namespaces;
 	var entry = namespaces[id];
 	namespaces[id] = nspace;
+}
+
+/**
+ * Get all of the graphml attributes used by this graph structure.
+ * @returns {Object} a live mapping of all of the attributes
+ */
+GraphmlPaper.prototype.getGraphmlAttributes = function(obj) {
+	return this.graphmlAttributes;
+}
+
+/**
+ * Set a new mapping of graphml attributes used by this graph structure.
+ * @param {Object} obj - a mapping of attribute identifiers to attributes
+ * @returns {Object} a mapping of all of the previous attribute identifiers to attributes
+ */
+GraphmlPaper.prototype.setGraphmlAttributes = function(obj) {
+	if(obj) {
+		var graphmlAttributes = this.graphmlAttributes;
+		for(var id in obj) {
+			if(obj[id]) {
+				this.setGraphmlAttribute(id, obj[id]);
+			}
+			else {
+				delete this.graphmlAttributes[id];
+			}
+			// TODO: remember why this line was left blank	
+		}
+	}
+}
+
+/**
+ * Get a specific graphml attribute used by this graph structure.
+ * @param {String} id - the schema used by the namespace
+ * @returns {GraphmlNamespace} the requested namespace
+ */
+GraphmlPaper.prototype.getGraphmlAttribute = function(id) {
+	return this.graphmlAttributes[id];
+}
+
+/**
+ * Set a specific graphml attribute into the mapping of attributes with the given id.
+ * @param {String} id - the id reference to the attribute
+ * @param {Object} attribute - the new attribute
+ * @returns {Object} the previous attribute that belonged to this id, if any
+ */
+GraphmlPaper.prototype.setGraphmlAttribute = function(id, attribute) {
+	var graphmlAttributes = this.graphmlAttributes;
+	var entry = graphmlAttributes[id];
+	graphmlAttributes[id] = attribute;
 }
 
 /**
