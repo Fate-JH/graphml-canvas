@@ -588,277 +588,20 @@ GraphmlCanvas.prototype.transferComplete = function(evt) {
 }
 
 /**
- * The workflow when provided with new XML data to be interpretted.
+ * The workflow when provided with new XML data to be interpreted.
  * @private
  * @param {XML} xml - na
  */
 GraphmlCanvas.prototype.readXML = function(xml) {
-	var gml = GraphmlCanvas.getHeader(xml);
-	if(this.validateRequiredNamespaces(gml)) {
-		console.log("Parsing graph data ...");
-		var namespaces = this.extractHeaderNamespaces(gml);
-		var attributes = GraphmlCanvas.getAttributes(gml);
-		var structures = this.readStructures(gml, namespaces);
-		structures.graphmlAttributes = attributes;
-		var name = xml.URL.slice(xml.URL.lastIndexOf("/")+1);
-		
-		var graph = new GraphmlPaper(name, {graphmlAttributes:attributes});
-		this.prepareElements(graph, structures, gml);
-		this.setGraph(graph);
-	}
-}
-
-/**
- * Rule out everything else but the graph data, from the root of the graph (a <graphml> node).
- * @private
- * @static
- * @param {XML} xml - na
- * @returns {XML} markup data only specific to the first graphml structure provided in the xml data, or null if none can be found
- */
-GraphmlCanvas.getHeader = function(xml) {
-	var g = xml.getElementsByTagName("graphml");
-	if(!g) {
-		console.log("Error when parsing file data - there is no data");
-		return null;
-	}
-	if(!g.length) {
-		console.log("Error when parsing file data - there is no header");
-		return null;
-	}
-	if(g.length > 1)
-		console.log("Caution when parsing file data - multiple headers found, suggesting multiple graph roots");
-	return g[0];
-}
-
-/**
- * Confirm that the content we have been passed is acceptable graphml data by checking the header
- * @private
- * @param {XML} xml - the structured data in xml format, starting at the header
- * @returns {Boolean} true, if the required graphml namespaces are properly set up; false, otherwise
- */
-GraphmlCanvas.prototype.validateRequiredNamespaces = function(xml) {
-	console.log("Checking graphml specifications ...");
+	var name = xml.URL.slice(xml.URL.lastIndexOf("/")+1);
+	var graph = new GraphmlPaper(name);
+	GraphmlNamespace.get("http://graphml.graphdrawing.org/xmlns").setup(this, graph, xml);
 	
-	var xmlns = "http://graphml.graphdrawing.org/xmlns";
-	var g = xml;
-	var uri = g.getAttribute("xmlns");
-	if(!uri || uri != xmlns) {
-		console.log("Error when parsing file data - namespace URI is wrong for graphml data");
-		return false;
-	}
-	// Optional namespace schema URI(s)
-	uri = g.getAttribute("xmlns:xsi");
-	if(uri) {
-		if(uri.indexOf("http://www.w3.org/2001/XMLSchema-instance") == -1) {
-			console.log("Error when parsing file data - URI is wrong for graphml data");
-			return false;
-		}
-		uri = g.getAttribute("xsi:schemaLocation"); // The optional location can contain many entries; for the moment, one of these two will be accepted
-		if(uri ? (uri.indexOf(xmlns) == -1 && uri.indexOf("http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd") == -1) : false) {
-			console.log("Error when parsing file data - URI is wrong for graphml data");
-			return false;
-		}
-	}
-	return true;
-}
-
-/**
- * Recover the paired prefix and namespaces from the grapml content's header
- * @private
- * @param {XML} xml - the structured data in xml format, starting at the header
- * @returns {Object} namespaces - an object populated by the information on all supported namespaces in this file
- * @returns {String} id in namespaces - the prefix URI that references a namespace
- * @returns {Array[String]} namespaces[id] - an Array of namespace URI associated to namespaces
- */
-GraphmlCanvas.prototype.extractHeaderNamespaces = function(xml) {
-	var g = xml;
-	var namespaces = {}, attributes = g.attributes; // Allocate the namespaces in the header
+	var namespaces = graph.getNamespaces();
+	for(var id in namespaces)
+		namespaces[id].setup(this, graph, xml);
 	
-	namespaces["graphml"] = ["http://graphml.graphdrawing.org/xmlns"]; // This default association will not be allocated normally
-	for(var i = 0, j = attributes.length; i < j; i++) {
-		var attr = attributes[i];
-		var tag = attr.name.split(":");
-		if(tag.length == 2)
-			namespaces[tag[1]] = attr.nodeValue.split(" ");
-	}
-	return namespaces;
-}
-
-/**
- * na
- * @private
- * @static
- * @param {XML} xml - the structured data in xml format, starting at the header
- * @returns {Object} obj - na
- * @returns {Object} obj.id - na
- * @returns {Object} obj.id.id - na
- * @returns {String} obj.id.'attr.name' - na
- * @returns {String} obj.id.'attr.type' - na
- * @returns {String} obj.id.for - na
- */
-GraphmlCanvas.getAttributes = function(xml) {
-	/*
-	EXAMPLE
-	<key id="d0"  for="graph" attr.name="Description" attr.type="string"/>
-	<key id="d1"  for="port" yfiles.type="portgraphics"/>
-	<key id="d2"  for="port" yfiles.type="portgeometry"/>
-	<key id="d3"  for="port" yfiles.type="portuserdata"/>
-	<key id="d4"  for="node" attr.name="url" attr.type="string"/>
-	<key id="d5"  for="node" attr.name="description" attr.type="string"/>
-	<key id="d6"  for="node" yfiles.type="nodegraphics"/>
-	<key id="d7"  for="graphml" yfiles.type="resources"/>
-	<key id="d8"  for="edge" attr.name="url" attr.type="string"/>
-	<key id="d9"  for="edge" attr.name="description" attr.type="string"/>
-	<key id="d10" for="edge" yfiles.type="edgegraphics"/>
-	*/
-	var obj = {};
-	
-	for(var i1 = 0, g = xml.getElementsByTagName("key"), j1 = g.length; i1 < j1; i1++) {
-		var key = g[i1];
-		var group = {};
-		for(var i2 = 0, attributes = key.attributes, j2 = attributes.length; i2 < j2; i2++) {
-			var attr = attributes[i2];
-			// TODO: validate attributes 'for' and 'attr.type'?
-			group[attr.name] = attr.value;
-		}
-		obj[group.id] = group;
-	}
-	return obj;
-}
-
-/**
- * Parse the standard graphml node data that can be found in a valid graphml file.
- * @private
- * @param {XML} xml - the structured data in graphml format
- * @param {Object} namespaces - the namespaces that were defined in the header of the file for this structured data
- * @returns {Object} o - an object populated by the information in the file
- * @returns {Array[ParsedGraphmlNode]} o.graphs - an Array of found subgraphs
- * @returns {Array[ParsedGraphmlNode]} o.nodes - an Array of found nodes
- * @returns {Array[ParsedGraphmlNode]} o.edges - an Array of found edges
- * @returns {Array[ParsedGraphmlNode]} o.hyperedges - an Array of found hyperedges
- */
-GraphmlCanvas.prototype.readStructures = function(xml, namespaces) {
-	var structures = {};
-	structures.graphs = [];
-	structures.nodes = [];
-	structures.edges = [];
-	structures.hyperedges = [];
-	
-	var list = null;
-	this.nodeListToArray(xml.getElementsByTagName("graph"), namespaces, structures.graphs);
-	this.nodeListToArray(xml.getElementsByTagName("node"), namespaces, structures.nodes);
-	this.nodeListToArray(xml.getElementsByTagName("edge"), namespaces, structures.edges);
-	this.nodeListToArray(xml.getElementsByTagName("hyperedge"), namespaces, structures.hyperedges);
-	
-	return structures;
-}
-
-/**
- * Perform early dissection of the node data to determine what to do with it
- * @private
- * @param {NodeList} nodeList - a not-Array data structuce of specific types of nodes
- * @param {Object} namespaces - the namespaces that were defined in the header of the file for this structured data
- * @param {Array[?]} arrayList - an optional existing array onto which the dissected node data will be pushed
- * @returns {Array[ParsedGraphmlNode]} an array of the encapsulated node data in the form of an intermediary structure
- */
-
-GraphmlCanvas.prototype.nodeListToArray = function(nodeList, namespaces, arrayList) {
-	/*
-	This function extracts the id and separates the namespace and object type, if possible.
-	Doing so this early may be exceptional; but, it makes separation between "reading of node data" and "visualizing node data" better defined.
-	*/
-	var ary = arrayList || [];
-	for(var i = 0, j = nodeList.length; i < j; i++) {
-		var node = nodeList[i];
-		var id = node.getAttribute("id");
-		var dtrct = this.pairNamespaceFromHeader(node, namespaces);
-		var container = new GraphmlCanvas.ParsedGraphmlNode(id, dtrct.namespace, dtrct.representation, node);
-		ary.push(container);
-	}
-	return ary;
-}
-
-/**
- * Find a valid namespaced class object that will be created for this element from the header definition of the prefix.
- * @private
- * @param {XML} elem - an isolated graphml node
- * @param {Object} namespaces - the namespaces that were defined in the header of the file for this structured data
- * @returns {Object} o - the paired namespace and cited object type from that schema that will be used to depict the node's data
- * @returns {String} o.namespace - the namespace prefix
- * @returns {String} o.representation - the object type to be found in that namespace
- */
-GraphmlCanvas.prototype.pairNamespaceFromHeader = function(elem, namespaces) {
-	if(!namespaces)
-		return null;
-	var children = elem.children;
-	for(var i = 0, j = children.length; i < j; i++) {
-		var tagName = children[i].tagName; // The namespaced tag will be of the format "PREFIX:OBJECT_TYPE," split into "PREFIX" and "OBJECT_TYPE"
-		 var promotedTagName = tagName.charAt(0).toUpperCase() + tagName.slice(1, tagName.length);
-		if(GraphmlNamespace.get("http://graphml.graphdrawing.org/xmlns").getSpecificClass(promotedTagName)) // If we encounter a core graphml node, skip over it
-			continue;
-		
-		var tags = tagName.split(":");
-		if(tags[0] in namespaces) {
-			var prefix = namespaces[tags[0]]; // The PREFIX will point to a namespace defined in this graph
-			return {namespace:prefix[0], representation:tags[1].slice(0)};
-		}
-		
-		if(children[i].children.length) { // Exhaustive :/
-			var result = this.pairNamespaceFromHeader(children[i], namespaces);
-			if(result)
-				return result;
-		}
-	}
-	return {namespace:null, representation:null};
-}
-
-/**
- * Take the extracted graphml data stored as lists and construct objects with appropriate visual Representions.
- * Also, call setup on all of the include namespaces.
- * @private
- * @param {GraphPaper} graph - na
- * @param {Object} structures - an object populated by the information in the file
- * @param {Array[ParsedGraphmlNode]} structures.graphs - an Array of subgraphs
- * @param {Array[ParsedGraphmlNode]} structures.nodes - an Array of nodes
- * @param {Array[ParsedGraphmlNode]} structures.edges - an Array of edges
- * @param {Array[ParsedGraphmlNode]} structures.hyperedges - an Array of hyperedges
- * @param {XML} xml - the structured data in graphml format
- */
-GraphmlCanvas.prototype.prepareElements = function(graph, structures, xml) {
-	var xmlns = GraphmlNamespace.get("http://graphml.graphdrawing.org/xmlns");
-	
-	var usedNamespaces = [];
-	var structuresGroups = ["graphs", "nodes", "edges", "hyperedges"];
-	for(var i1 = 0, j1 = structuresGroups.length; i1 < j1; i1++) {
-		var tag = structuresGroups[i1];
-		var promotedTag = tag.charAt(0).toUpperCase() + tag.slice(1, tag.length-1); // e.g., nodes --> Node and edges --> Edge
-		var list = structures[tag];
-		var mainClass = xmlns.getSpecificClass(promotedTag); // This is the general graphml representation of the data
-		var setFunc = GraphmlPaper.prototype["set"+promotedTag];
-		for(var i2 = 0, j2 = list.length; i2 < j2; i2++) {
-			var entry = list[i2];
-			var entryNamespace = "";
-			var entryRepresentation = null;
-			
-			var entryPrefix = entry.namespace;
-			entryNamespace = GraphmlNamespace.get(entryPrefix);
-			if(entryNamespace) {
-				entryRepresentation = entryNamespace.getSpecificClass(entry.representation); // This is the specific namespace representation of the data
-				if(!graph.getNamespace(entryPrefix)) { // We don't want to allocate a used namespace more than once
-					graph.setNamespace(entryPrefix, entryNamespace)
-					usedNamespaces.push(entryNamespace);
-				}
-			}
-			
-			var node = new mainClass(entry.id, entryRepresentation, {xml:entry.data});
-			setFunc.call(graph, entry.id, node); // Function for adding the object to graph
-		}
-	}
-	
-	console.log("Performing supplementary namespace setup(s) ...");
-	for(var i4 = 0, j4 = usedNamespaces.length; i4 < j4; i4++) { // Run setup for all of the namespaces that have been used on this graph
-		(usedNamespaces[i4]).setup(this, graph, xml);
-	}
+	this.setGraph(graph);
 }
 
 GraphmlCanvas.prototype.zoom = function(factor) {
@@ -876,22 +619,6 @@ GraphmlCanvas.setTransform = function(transform, style) {
 	style["-ms-transform"] =
 	style["-webkit-transform"] =
 	style["transform"] = transform;
-}
-
-
-/**
- * An intermediary storage structure for data extracted from graphml nodes during the preliminary parsing phase
- * @private
- * @property {String} id - the id associated with this graphml data
- * @property {String} namespace - the namespace that governs the specifics of the graphml data
- * @property {String} representation - the specific visualization of this graphml data
- * @property {XML} data - the root of the original graphml data
- */
-GraphmlCanvas.ParsedGraphmlNode = function(id, namespace, representation, data) {
-	this.id = id || "";
-	this.namespace = namespace || null;
-	this.representation = representation || "";
-	this.data = data;
 }
 
 
@@ -923,8 +650,9 @@ function GraphmlPaper(id, attributes) {
 	var cattributes = attributes || {};
 	
 	this.id = id || "new";
-	this.namespaces = {};
+	this.header = null;
 	this.graphmlAttributes = {};
+	this.namespaces = {};
 	this.originalData = null;
 	
 	this.graph = null;
@@ -973,30 +701,18 @@ GraphmlPaper.prototype.setRootGraph = function(graph) {
  * @returns {Object} a live mapping of all of the nodes
  */
 GraphmlPaper.prototype.getNodes = function() {
-	var nodesOut = {};
-	var graphs = [this.graph];
-	for(var i = 0; i < graphs.length; i++) {
-		var graph = graphs[i];
-		var subgraphs = graph.getSubgraphs();
-		for(var id in subgraphs)
-			graphs.push(subgraphs[id]);
-		var nodes = graph.getNodes();
-		for(var id in nodes)
-			nodesOut[id] = nodes[id];
-	}
-	return nodesOut;
+	return this.graph ? this.graph.getNodes(true) : {};
 }
 
 /**
  * Set a new mapping of node elements for this graph structure.
- * Using this method can destroy the continuity of the graph structure, as existing node ids will no longer be associated with existing node elements.
+ * This method makes no changes to the graph structure.
  * @param {Object} nodes - a mapping of node ids to nodes
- * @returns {Object} a mapping of all of the previous node ids to nodes
+ * @returns {Object} always returns null
  */
 GraphmlPaper.prototype.setNodes = function(nodes) {
-	var displacedNodes = this.nodes;
-	this.nodes = nodes;
-	return displacedNodes;
+	console.log("GraphmlPaper.setNodes: not yet supported.");
+	return null;
 }
 
 /**
@@ -1005,15 +721,11 @@ GraphmlPaper.prototype.setNodes = function(nodes) {
  * @returns {Node} the requested node
  */
 GraphmlPaper.prototype.getNode = function(id) {
-	var subgraphAddress = id.split("::");
-	subgraphAddress.pop();
 	var graph = this.graph;
-	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
-		graph = graph.getSubgraph( subgraphAddress[i]+":");
-		if(!graph)
-			return null;
-	}
-	return graph.getNode(id);
+	if(!id || !graph)
+		return null;
+	
+	return graph.getNode(id, true);
 }
 
 /**
@@ -1024,18 +736,8 @@ GraphmlPaper.prototype.getNode = function(id) {
  * @returns {Node} the previous node that belonged to this id, if any
  */
 GraphmlPaper.prototype.setNode = function(id, node) {
-	var subgraphAddress = id.split("::");
-	subgraphAddress.pop();
-	var graph = this.graph;
-	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
-		graph = graph.getSubgraph( subgraphAddress[i]+":");
-		if(!graph)
-			return null;
-	}
-	if(node)
-		return graph.addNode(id, node);
-	else
-		return graph.removeNode(id);
+	console.log("GraphmlPaper.setNode: not yet supported.");
+	return null;
 }
 
 /**
@@ -1043,18 +745,7 @@ GraphmlPaper.prototype.setNode = function(id, node) {
  * @returns {Object} a live mapping of all of the edges
  */
 GraphmlPaper.prototype.getEdges = function() {
-	var edgesOut = {};
-	var graphs = [this.graph];
-	for(var i = 0; i < graphs.length; i++) {
-		var graph = graphs[i];
-		var subgraphs = graph.getSubgraphs();
-		for(var id in subgraphs)
-			graphs.push(subgraphs[id]);
-		var edges = graph.getEdges();
-		for(var id in edges)
-			edgesOut[id] = edges[id];
-	}
-	return edgesOut;
+	return this.graph ? this.graph.getEdges(true) : {};
 }
 
 /**
@@ -1064,9 +755,8 @@ GraphmlPaper.prototype.getEdges = function() {
  * @returns {Object} a mapping of all of the previous edge ids to edges
  */
 GraphmlPaper.prototype.setEdges = function(edges) {
-	var displacedEdges = this.edges;
-	this.edges = edges;
-	return displacedEdges;
+	console.log("GraphmlPaper.setEdges: not yet supported.");
+	return null;
 }
 
 /**
@@ -1075,15 +765,11 @@ GraphmlPaper.prototype.setEdges = function(edges) {
  * @returns {Edge} the requested edge
  */
 GraphmlPaper.prototype.getEdge = function(id) {
-	var subgraphsAddress = id.split("::");
-	subgraphAddress.pop();
 	var graph = this.graph;
-	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
-		graph = graph.getSubgraph( subgraphAddress[i]+":");
-		if(!graph)
-			return null;
-	}
-	return graph.getEdge(id);
+	if(!id || !graph)
+		return null;
+	
+	return graph.getEdge(id, true);
 }
 
 /**
@@ -1094,18 +780,8 @@ GraphmlPaper.prototype.getEdge = function(id) {
  * @returns {Edge} the previous edge that belonged to this id, if any
  */
 GraphmlPaper.prototype.setEdge = function(id, edge) {
-	var subgraphAddress = id.split("::");
-	subgraphAddress.pop();
-	var graph = this.graph;
-	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
-		graph = graph.getSubgraph( subgraphAddress[i]+":");
-		if(!graph)
-			return null;
-	}
-	if(edge)
-		return graph.addEdge(id, edge);
-	else
-		return graph.removeEdge(id);
+	console.log("GraphmlPaper.setEdge: not yet supported.");
+	return null;
 }
 
 /**
@@ -1113,18 +789,7 @@ GraphmlPaper.prototype.setEdge = function(id, edge) {
  * @returns {Object} a live mapping of all of the hyperedges
  */
 GraphmlPaper.prototype.getHyperedges = function() {
-	var edgesOut = {};
-	var graphs = [this.graph];
-	for(var i = 0; i < graphs.length; i++) {
-		var graph = graphs[i];
-		var subgraphs = graph.getSubgraphs();
-		for(var id in subgraphs)
-			graphs.push(subgraphs[id]);
-		var edges = graph.getHyperedges();
-		for(var id in edges)
-			edgesOut[id] = edges[id];
-	}
-	return edgesOut;
+	return this.graph ? this.graph.getHyperedges(true) : {};
 }
 
 /**
@@ -1134,7 +799,8 @@ GraphmlPaper.prototype.getHyperedges = function() {
  * @returns {Object} a mapping of all of the previous hyperedge ids to hyperedges
  */
 GraphmlPaper.prototype.setHyperedges = function(hyperedges) {
-	this.hyperedges = hyperedges;
+	console.log("GraphmlPaper.setHyperedges: not yet supported.");
+	return null;
 }
 
 /**
@@ -1143,15 +809,11 @@ GraphmlPaper.prototype.setHyperedges = function(hyperedges) {
  * @returns {Hyperedge} the requested hyperedge
  */
 GraphmlPaper.prototype.getHyperedge = function(id) {
-	var subgraphAddress = id.split("::");
-	subgraphAddress.pop();
 	var graph = this.graph;
-	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
-		graph = graph.getSubgraph( subgraphAddress[i]+":");
-		if(!graph)
-			return null;
-	}
-	return graph.getHyperedge(id);
+	if(!id || !graph)
+		return null;
+	
+	return graph.getHyperedge(id, true);
 }
 
 /**
@@ -1162,17 +824,8 @@ GraphmlPaper.prototype.getHyperedge = function(id) {
  * @returns {Hyperedge} the previous hyperedge that belonged to this id, if any
  */
 GraphmlPaper.prototype.setHyperedge = function(id, hyperedge) {
-	var subgraphsAddress = id.split("::");
-	var graph = this.graph;
-	for(var i = 0, j = subgraphAddress.length; i < j; i++) {
-		graph = graph.getSubgraph( subgraphAddress[i]+":");
-		if(!graph)
-			return null;
-	}
-	if(hyperedge)
-		return graph.addHyperedge(id, hyperedge);
-	else
-		return graph.removeHyperedge(id);
+	console.log("GraphmlPaper.setHyperedge: not yet supported.");
+	return null;
 }
 
 /**
@@ -1180,18 +833,7 @@ GraphmlPaper.prototype.setHyperedge = function(id, hyperedge) {
  * @returns {Object} a live mapping of all of the graphs
  */
 GraphmlPaper.prototype.getSubgraphs = function() {
-	var graphsOut = {};
-	var graphs = [this.graph];
-	for(var i = 0; i < graphs.length; i++) {
-		var graph = graphs[i];
-		var subgraphs = graph.getSubgraphs();
-		for(var id in subgraphs) {
-			var subgraph = subgraphs[id];
-			graphs.push(subgraph);
-			graphsOut[id] = subgraph;
-		}
-	}
-	return graphsOut;
+	return this.graph ? this.graph.getSubgraphs(true) : {};
 }
 /**
  * For internal use only.
@@ -1205,9 +847,8 @@ GraphmlPaper.prototype.getGraphs = GraphmlPaper.prototype.getSubgraphs;
  * @returns {Object} a mapping of all of the previous hyperedge ids to hyperedges
  */
 GraphmlPaper.prototype.setSubgraphs = function(subgraphs) {
-	var oldSubgraph = this.subgraphs;
-	this.subgraphs = subgraphs;
-	return oldSubgraph;
+	console.log("GraphmlPaper.setSubgraphs: not yet supported.");
+	return null;
 }
 /**
  * For internal use only.
@@ -1220,18 +861,11 @@ GraphmlPaper.prototype.setGraphs = GraphmlPaper.prototype.setSubgraphs;
  * @returns {Graph} the requested graph
  */
 GraphmlPaper.prototype.getSubgraph = function(id) {
-	var subgraphAddress = id.split("::");
 	var graph = this.graph;
-	var i = 0;
-	if(subgraphAddress[0] == "root" || subgraphAddress[0] == graph.getId())
-		i = 1;
+	if(!id || !graph)
+		return null;
 	
-	for(var j = subgraphAddress.length; i < j; i++) {
-		graph = graph.getSubgraph( subgraphAddress[i]+":");
-		if(!graph)
-			return null;
-	}
-	return graph;
+	return graph.getSubgraph(id, true);
 }
 /**
  * For internal use only.
@@ -1246,29 +880,29 @@ GraphmlPaper.prototype.getGraph = GraphmlPaper.prototype.getSubgraph;
  * @returns {Graph} the previous subgraph that belonged to this id, if any
  */
 GraphmlPaper.prototype.setSubgraph = function(id, subgraph) {
-	var subgraphAddress = id.split("::");
-	var newGraphId = subgraphAddress.pop();
-	var graph = this.graph;
-	if(graph == null) {
-		this.graph = subgraph;
-		return null;
-	}
-	else {
-		for(var i = 0, j = subgraphAddress.length; i < j; i++) {
-			graph = graph.getSubgraph( subgraphAddress[i]+":");
-			if(!graph)
-				return null;
-		}
-		if(subgraph)
-			return graph.addSubgraph(newGraphId, subgraph);
-		else
-			return graph.removeSubgraph(newGraphId);
-	}
+	console.log("GraphmlPaper.setSubgraph: not yet supported.");
+	return null;
 }
 /**
  * For internal use only.
  */
 GraphmlPaper.prototype.setGraph = GraphmlPaper.prototype.setSubgraph;
+
+/**
+ * na
+ */
+GraphmlPaper.prototype.getHeader = function() {
+	return this.header;
+}
+
+/**
+ * na
+ */
+GraphmlPaper.prototype.setHeader = function(header) {
+	if(this.header)
+		console.log("Graph named "+this.id+": take care when overwiting an existing header");
+	this.header = header;
+}
 
 /**
  * Retrieve an element and useful information about the element from the displayed graph.
@@ -1281,19 +915,19 @@ GraphmlPaper.prototype.setGraph = GraphmlPaper.prototype.setSubgraph;
  * @returns {String} obj.type - the Graphml type of element that was recovered (Node, Edge, Hyperedge)
  * @returns {String} obj.ns - the namespace URI that the element's representation uses
  * @returns {String} obj.nstype - the namespace-scoped type of element's representation
- * @returns {Object} obj.elem - the elem recovered from the graph's data
- * @returns {DOMElement} obj.dom - the onscreen element recovered from the HTML document
+ * @returns {Object} obj.obj - the elem recovered from the graph's data
+ * @returns {DOMElement} obj.elem - the onscreen element recovered from the HTML document
  */
 GraphmlPaper.prototype.getGraphElement = function(id) {
 	var elem = null;
-	for(var i = 0, getCategoryFuncs = ["getNodes", "getEdges", "getHyperedges"]; i < 3; i++) {
-		var elems = GraphmlPaper.prototype[getCategoryFuncs[i]].call(this);
-		if(id in elems) {
-			elem = elems[id];
+	for(var i = 0, getCategoryFuncs = ["getNode", "getEdge", "getHyperedge"]; i < 3; i++) {
+		var ret = GraphmlPaper.prototype[getCategoryFuncs[i]].call(this, id);
+		if(ret) {
+			elem = ret;
 			break;
 		}
 	}
-	if(!elem) // Can not find the element by id
+	if(!elem)
 		return null;
 	
 	var elemRep = elem.getRepresentation();
@@ -1304,9 +938,10 @@ GraphmlPaper.prototype.getGraphElement = function(id) {
 	obj.type = elem.constructor.name;
 	obj.ns = "";
 	obj.nstype = elemRep && elemRep.constructor.name;
-	obj.elem = elem;
-	obj.dom = document && document.getElementById(id); // If this element is being depicted
+	obj.obj = elem;
+	obj.elem = document && document.getElementById(id); // If this element is being depicted
 	if(elemRep) { // Elem has visualization and a coordinate location on the graph
+		// TODO: use graphml attributes to find the graphics key node
 		var namespaces = this.getNamespaces();
 		var elemRepConstructor = elemRep.constructor;
 		var nstype = obj.nstype;
@@ -1516,10 +1151,6 @@ GraphmlPaper.prototype.drawGraph = function(canvas, graph) {
 	this.drawNodes(canvas, graph);
 	this.drawEdges(canvas, graph);
 	this.drawHyperedges(canvas, graph);
-	
-	var subgraphs = graph.getSubgraphs();
-	for(var id in subgraphs)
-		this.drawGraph(canvas, subgraphs[id]);
 }
 
 /**
@@ -1534,9 +1165,9 @@ GraphmlPaper.prototype.drawNodes = function(canvas, subgraph) {
 		var localNode = localNodes[id];
 		canvas.setToContentLayer( localNode.createElement(), gid );
 	
-		/* var subgraphs = localNode.getSubgraphs();
-		for(var id in subgraphs)
-			this.drawGraph(canvas, subgraphs[id]);*/
+		var subgraph = localNode.getSubgraph();
+		if(subgraph)
+			this.drawGraph(canvas, subgraph);
 	}
 }
 

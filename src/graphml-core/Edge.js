@@ -2,13 +2,12 @@
  * The basic container of a graphml edge element.
  * @constructor
  * @param {String} id - an unique identifier for this element
- * @param {Object} shape - the optional, but recommended, behaviors that maintain the visual component of the element
  * @param {Object} attributes - a reference copy of the original information passed into the function (only set if there is no representation)
  */
 Edge.prototype = new GraphmlElement();
 Edge.prototype.constructor = Edge;
-function Edge(id, shape, attributes) {
-	GraphmlElement.call(this, id, shape, attributes);
+function Edge(id, attributes) {
+	GraphmlElement.call(this, id, attributes);
 }
 
 /**

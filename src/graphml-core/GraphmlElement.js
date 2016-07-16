@@ -8,16 +8,16 @@
  * @abstract
  * @constructor
  * @param {String} id - a unique identifier for this element
- * @param {Function} shape - the optional, but recommended, behaviors that maintain the visual component of the element
  * @param {Object} attributes - a reference copy of the original information passed into the function (only set if there is no representation)
  */
-function GraphmlElement(id, shape, attributes) {
+function GraphmlElement(id, attributes) {
 	this.id = id;
 	this.representation = null;
 	this.attributes = null;
+	this.owner = null;
 	
-	if(shape)
-		this.setRepresentation(shape);
+	if(attributes)
+		this.setRepresentation(attributes.shape);
 	if(attributes)
 		this.readXML(attributes);
 }
@@ -37,6 +37,31 @@ GraphmlElement.prototype.getId = function() {
  */
 GraphmlElement.prototype.setId = function(id) {
 	this.id = id;
+	// TODO: what to do if the representation was already created
+	return true;
+}
+
+/**
+ * Get the significant local identifier of the graphml element.
+ * this is the last portion of an element's id.
+ * @returns {String} an identifier
+ */
+GraphmlElement.prototype.getLocalId = function() {
+	return this.id.slice(this.id.lastIndexOf("::")+1);
+}
+
+/**
+ * Provide a new significant local identifier for the graphml element.
+ * @param {String} id - an identifier
+ * @returns {Boolean} always returns true
+ */
+GraphmlElement.prototype.setLocalId = function(id) {
+	if(id.search("::") > -1) {
+		console.log("GraphmlElement: can not set a local id that tries to nest the element.")
+	}
+	var name = this.id.split("::");
+	name[name.length-1] = id;
+	this.id = name.join("::");
 	// TODO: what to do if the representation was already created
 	return true;
 }
@@ -72,62 +97,10 @@ GraphmlElement.prototype.getRepresentation = function() {
 /**
  * Assign the visualization of this element.
  * @param {Function} shape - the constructor of the visualization of the element
- * @returns {Boolean} true, if it was set correctly; false, otherwise
+ * @returns {Boolean} always returns true at this time
  */
 GraphmlElement.prototype.setRepresentation = function(shape) {
-	var typeOfShape = typeof(shape);
-	if(!shape || typeOfShape != "function")
-		return false;
-	
-	var representation = this.representation
-	var typeOfRep = typeof(representation);
-	if(representation) {
-		if(typeOfRep == "object") {
-			console.log("The representation of element "+this.id+" has already been created.  Replacing it is not supported at this time.");
-			return false;
-		}
-	}
-	
 	this.representation = shape;
-	this.buildRepresentation();
-	return true;
-}
-
-/**
- * Build the prescribed representation.
- * If the representation has already been built, rebuild it.
- * Please note that the result is not dependent on whether a representation exists afterwards, but whether the building process succeeded.
- * @returns {Boolean} true, if the representation was capable of being built; false, otherwise
- */
-GraphmlElement.prototype.buildRepresentation = function() {
-	var attributes = this.attributes;
-	var representation = this.representation;
-	var func = representation;
-	var workingRepresentation = representation && typeof(representation) == "object"; // typeof(null) == "object;" true story
-	
-	if(workingRepresentation) {
-		attributes = representation.getAttributes();
-		func = representation.constructor;
-	}
-	if(!attributes || !attributes.xml || !func)
-		return false;
-	
-	var object = null;
-	try {
-		object = new func(this.id, attributes);
-		this.representation = object;
-	}
-	catch(err) {
-		if(!attributes.xml)
-			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but there was no data");
-		else if(!representation)
-			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but could not build a working parser");
-		else if(!object)
-			console.log(this.constructor.name +" "+ this.id +" tried to parse xml data but could not build a "+representation.name+" visual representation");
-		if(!workingRepresentation) // We failed to construct this Representation and it had not previously been constructed; discard it
-			this.representation = null;
-		return false;
-	}
 	return true;
 }
 
@@ -154,6 +127,20 @@ GraphmlElement.prototype.getRepresentationName = function() {
  */
 GraphmlElement.prototype.setRepresentationName = function(shape) {
 	return false;
+}
+
+/**
+ * na
+ */
+GraphmlElement.prototype.getParent = function() {
+	return this.owner;
+}
+
+/**
+ * na
+ */
+GraphmlElement.prototype.setParent = function(owner) {
+	this.owner = owner;
 }
 
 /**
@@ -198,7 +185,6 @@ GraphmlElement.prototype.readXML = function(attributes) {
 	this.getGraphmlAttributes(xml, attributes);
 	this.setAttributes(attributes);
 	this.id = attributes.id;
-	this.buildRepresentation();
 }
 
 /**
@@ -212,7 +198,7 @@ GraphmlElement.prototype.readXML = function(attributes) {
 GraphmlElement.prototype.getGraphmlAttributes = function(xml, attributes) {
 	attributes = attributes || {};
 	if(xml)
-		attributes.id = xml.getAttribute("id") || this.constructor.name;
+		this.id = attributes.id = xml.getAttribute("id") || this.constructor.name;
 	return attributes;
 }
 

@@ -11,7 +11,8 @@ var classList = [
 				"GenericNode.js",
 				"ProxyAutoBoundsNode.js",
 				"TableNode.js",
-				"PolyLineEdge.js"
+				"PolyLineEdge.js",
+				"Resources.js"
 ];
 yWorks = new GraphmlNamespace("http://www.yworks.com/xml/graphml", { classList:classList });
 
@@ -22,14 +23,81 @@ yWorks = new GraphmlNamespace("http://www.yworks.com/xml/graphml", { classList:c
  * @override
  */
 yWorks.setup = function(canvas, graph, xml, attributes) {
-	var attr = attributes || {};
-	if(!canvas || !graph)
-		throw new Error("Completely unrecoverable situation!  Missing either the canvas or the graph at a crucial setup stage!");
-	
+	yWorks.handleComplexData(graph);
 	yWorks.setElementsInView(graph);
 	yWorks.clipEdgeEndpointsToNodes(canvas, graph);
-	yWorks.allocateSVGResources(graph, xml);
-	//canvas.zoom = yWorks.zoom;
+	yWorks.allocateSVGResources(graph);
+}
+
+/**
+ * Convert graphml attribute data that transforms into namespace-specific class objects.
+ * @private
+ * @static
+ * @param {GraphmlPaper} graph - the structure that contains all of the deployed graphml node data
+ */
+yWorks.handleComplexData = function(graph) {
+	var header = graph.getHeader();
+	var graphmlAttributes = graph.getGraphmlAttributes();
+	// Construct element visuals
+	for(var i = 0, elems = ["graph","node","edge","hyperedge"], j = elems.length; i <j; i++) {
+		var elemId = elems[i];
+		var elemAttributes = graphmlAttributes["for"][elemId];
+		for(var id in elemAttributes) {
+			var type = elemAttributes[id]["yfiles.type"];
+			if(type && type.search("graphics") > -1) {
+				var list = graph["get"+elemId[0].toUpperCase()+elemId.slice(1)+"s"]();
+				yWorks.buildRepresentation(list, id);
+				break;
+			}
+		}
+	}
+	// Construct additional resource picker
+	var elemAttributes = graphmlAttributes["for"]["graphml"];
+	for(var id in elemAttributes) {
+		var type = elemAttributes[id]["yfiles.type"];
+		var data = graph[id];
+		if(type && type.search("resources") > -1) {
+			var resourceClass = GraphmlNamespace.get(data.uri).getSpecificClass(data.className);
+			if(resourceClass)
+				graph[id] = new resourceClass({xml:data.xml});
+		}
+	}
+}
+
+/**
+ * Construct namespace-specific visual representations of the graph elements.
+ * @private
+ * @static
+ * @param {Object} elemMap - a mapping of GraphmlElement ids to elements
+ * @param {String} repId - the key id of the graphml attribute that holds the representation data for this graph's elements
+ */
+yWorks.buildRepresentation = function(elemMap, repId) {
+	for(var id in elemMap) {
+		var elem = elemMap[id];
+		var elemType = elem.constructor.name.toLowerCase();
+		var eid = elem.getId();
+		var graphicsElement = elem[repId];
+		if(!graphicsElement || graphicsElement.uri != yWorks.getNamespaceURI())
+			continue;
+		var repClass = yWorks.getSpecificClass(graphicsElement.className);
+		if(!repClass) {
+			console.log("yWorks: "+elemType+" "+eid+" asked for unsupported object "+graphicsElement.className);
+			continue;
+		}
+		var attributes = elem.getAttributes();
+		try {
+			var representation = new repClass(eid, attributes);
+			elem.setRepresentation(representation);
+		}
+		catch(err) {
+			if(!graphicsElement.xml)
+				console.log("yWorks: "+elemType+" "+eid+" tried to parse xml data but there was no data");
+			else if(!representation)
+				console.log("yWorks: "+elemType+" "+eid+" could not build a working "+graphicsElement.className+" parser - "+err.message);
+			else
+				console.log("yWorks: "+elemType+" "+eid+" encountered a strange error - "+err.message);
+		}
+	}
 }
 
 /**
@@ -104,16 +172,7 @@ yWorks.setElementsInView = function(graph) {
 	graphData.width = (upperx - lowerx);
 	graphData.height = (uppery - lowery);
 	
-	//TODO: in the future, we want all elements to be moved so that the left-most ones and top-most ones are at x=0 and y=0, respectively
-// 	var cwidth = canvas.getWidth();
-	var correctx = 0;
-//	if(lowerx < 0 || upperx > cwidth)
-		correctx = -lowerx;
-//	var cheight = canvas.getHeight();
-	var correcty = 0;
-//	if(lowery < 0 || uppery > cheight)
-		correcty = -lowery;
-	yWorks.shiftElements(graph, correctx, correcty); // Shift everything within a positive buffer region for the purposes of scrolling
+	yWorks.shiftElements(graph, -lowerx, -lowery); // Shift everything within a positive buffer region for the purposes of scrolling
 }
 
 /**
@@ -389,29 +448,29 @@ yWorks.linearIntersect = function(ax, ay, bx, by, cx, cy, dx, dy) {
  * @private
  * @static
  * @param {Graph} graph - the structure that contains all of the deployed graphml node data
- * @param {XML} data - the original graphml data
  */
-yWorks.allocateSVGResources = function(graph, xml) {
-	var yuri = yWorks.getNamespaceURI();
-	var resourceGroup = xml.getElementsByTagNameNS(yuri, "Resources")[0]; // Find resources
-	if(!resourceGroup)
+yWorks.allocateSVGResources = function(graph) {
+	var resId = null;
+	var attributes = graph.getGraphmlAttributes()["for"]["graphml"];
+	for(var id in attributes) {
+		if(attributes[id]["yfiles.type"] == Resources["yfiles.type"]) {
+			resId = id;
+			break;
+		}
+	}
+	var resources = graph[resId];
+	if(!resources)
 		return;
 	
-	var resources = resourceGroup.getElementsByTagNameNS(yuri, "Resource");
 	var nodes = graph.getNodes(); // SVG-type Node elements interleaved with other elements
 	for(var id in nodes) {
 		var node = nodes[id];
 		if(node.getRepresentationName() == "SVGNode") {
 			var rep = node.getRepresentation();
-			var resNum = rep.getRefid();
-			var resElem = resources[(+resNum)-1]; // They're numbered, one-indexed (remember: this is a NodeList, not an Array)
-			if(resElem) {
-				var content = resElem.firstChild && resElem.firstChild.nodeValue;
-				if(content) {
-					content = content.replace(/&lt;/g, "<").replace(/&gt;/g, ">"); // Switch out xml-safe encoding for normal symbol
-					rep.setRef(content);
-				}
-			}
+			var resNum = (+rep.getRefid()) - 1; // Cast
+			var content = resources.getResource(resNum);
+			if(content)
+				rep.setRef(content);
 		}
 	}
 }
@@ -475,62 +534,6 @@ yWorks.drawBackground = function(canvas, attributes) {
 	svg.appendChild(path);
 	
 	canvas.setToBackgroundLayer(svg);
-}
-
-/**
- * Zoom the canvas and all the elements and the background depicted in it.
- * @param {Number} factor - a value that indicates the zoom level that is never equal to or less than zero
- */
-yWorks.zoom = function(factor) {
-	var canvas = this.canvas;
-	var graph = this.getGraph();
-	if(!canvas || !graph)
-		return;
-	
-	// Evaluate canvas zoom factor
-	factor = isNaN(+factor) ? 1 : (factor <= 0 ? 1 : factor);
-	var data = this.getGraphData();
-	var currentFactor = data.zoom;
-	if(currentFactor == factor)
-		return;
-	data.zoom = factor;
-	
-	// Calculate scrollbar offsets
-	// TODO: canvas.scrollLeft and canvas.scrollTop are invalid if scroll n goes from range 0 < n < 1 to range n > 1; stopping at 1 works.
-	var halfScrollLenHori = this.getScrollBarHorizontalLength()/2;
-	var halfScrollLenVert = this.getScrollBarVerticalLength()/2;
-	var setScrollHori = 0, setScrollVert = 0
-	if(currentFactor >= 1) {
-		setScrollHori = ((canvas.scrollLeft + halfScrollLenHori) / currentFactor) * factor - halfScrollLenHori;
-		setScrollVert = ((canvas.scrollTop + halfScrollLenVert) / currentFactor) * factor - halfScrollLenVert;
-	}
-	else {
-		data.zoom = 1;
-		setScrollHori = graph.getWidth(this)/2 * factor - halfScrollLenHori;
-		setScrollVert = graph.getHeight(this)/2 * factor - halfScrollLenVert;
-		data.zoom = factor;
-	}
-	
-	// Apply transformation scalar
-	var tdata = "scale("+factor+","+factor+")";
-	var cstyle = this.getContentLayer().style;
-	var bstyle = this.getBackgroundLayer().style;
-	GraphmlCanvas.setTransform(tdata, cstyle);
-	if(factor > 1) {
-		cstyle["transform-origin"] = "0 0";
-		GraphmlCanvas.setTransform(tdata, bstyle);
-	}
-	else {
-		cstyle["transform-origin"] = null;
-		GraphmlCanvas.setTransform("scale(1,1)", bstyle);
-	}
-	if(factor <= 1 || currentFactor < 1) { // Completely redraw the background layer, to avoid gaps on the edges caused by scaling below 1
-		this.clearBackgroundLayer();
-		graph.drawBackground(this);
-	}
-	// Apply scrollbar offsets
-	canvas.scrollLeft = setScrollHori;
-	canvas.scrollTop = setScrollVert;
 }
 
 /**
